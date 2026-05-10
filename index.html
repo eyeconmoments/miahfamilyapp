@@ -165,30 +165,27 @@
       { name: 'Netflix',        amount: 10.99,   due_day: 25, category: 'subscription'  },
     ];
 
-    // ─── Prayer notification scheduling ────────────────────────────
-    const schedulePrayerAlerts = (times) => {
+    // ─── Prayer notification scheduling (via Service Worker) ────────
+    const schedulePrayerAlerts = async (times) => {
       if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      if (!('serviceWorker' in navigator)) return;
       const now = new Date();
       const nowMs = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000;
-      PRAYER_KEYS.forEach(key => {
+      const prayers = PRAYER_KEYS.map(key => {
         const [h, m] = times[key].split(':').map(Number);
-        const pMs = h * 3600000 + m * 60000;
-        const diff = pMs - nowMs;
-        if (diff > 90000) { // more than 90 seconds away
-          setTimeout(() => {
-            if (Notification.permission === 'granted') {
-              try {
-                new Notification(PRAYER_ICONS[key] + ' ' + PRAYER_LABELS[key] + ' time', {
-                  body: 'It is ' + times[key] + ' — time for ' + PRAYER_LABELS[key] + '. Allahu Akbar.',
-                  tag: 'salah-' + key,
-                  silent: false,
-                });
-              } catch(e) {}
-            }
-          }, diff);
-        }
-      });
+        return { key, label: PRAYER_LABELS[key], icon: PRAYER_ICONS[key], time: times[key], delayMs: (h * 3600000 + m * 60000) - nowMs };
+      }).filter(p => p.delayMs > 90000);
+      if (!prayers.length) return;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg.active) reg.active.postMessage({ type: 'PRAYER_SCHEDULE', prayers });
+      } catch(e) {}
     };
+
+    // Register service worker on load
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
 
     // ─── Modal ───────────────────────────────────────────────────────
     function Modal({ title, onClose, children }) {
@@ -1992,7 +1989,7 @@
           db.from('family_users').select('*').then(({ data }) => setAllUsers(data || []));
           // Auto-schedule prayer notifications on login if previously enabled
           if (localStorage.getItem('salahNotif') === 'true' && Notification.permission === 'granted') {
-            schedulePrayerAlerts(getPrayerTimes(new Date()));
+            schedulePrayerAlerts(getPrayerTimes(new Date())).catch(() => {});
           }
         }
       }, [user?.id]);
