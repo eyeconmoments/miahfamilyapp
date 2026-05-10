@@ -11,6 +11,8 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     html { overscroll-behavior: none; height: 100%; }
@@ -164,6 +166,19 @@
       { name: 'Water Bill',     amount: 42.00,   due_day: 22, category: 'utility'       },
       { name: 'Netflix',        amount: 10.99,   due_day: 25, category: 'subscription'  },
     ];
+
+    // ─── Spending categories ────────────────────────────────────────
+    const SPEND_CATS = {
+      groceries:     { label: 'Groceries',       color: '#10b981', kw: ['TESCO','ASDA','SAINSBURY','MORRISON','LIDL','ALDI','WAITROSE','CO-OP','COOP','M&S FOOD','MARKS & SP','ICELAND','FARMFOODS','SPAR','NISA','COSTCO','BOOTHS','BUDGENS'] },
+      eating_out:    { label: 'Eating Out',       color: '#f59e0b', kw: ['MCDONALD','KFC','SUBWAY','PIZZA','BURGER','CHICKEN','RESTAURANT','CAFE ','COFFEE','STARBUCKS','COSTA','GREGGS','NANDOS','DOMINO','JUST EAT','DELIVEROO','UBER EATS','KEBAB','TAKEAWAY','CHIPPY','WETHERSPOON','PUB ','BAR '] },
+      transport:     { label: 'Transport',        color: '#6366f1', kw: ['TFL ','TRANSPORT FOR','NATIONAL RAIL','TRAINLINE','UBER ','PETROL','BP ','SHELL','ESSO','TEXACO','PARKING','BUS ','TRAIN','FUEL','AUTOSERVE','NPOWER FUEL','RAC ','AA ','MOT ','GARAGE'] },
+      shopping:      { label: 'Shopping',         color: '#ec4899', kw: ['AMAZON','EBAY','ARGOS','PRIMARK','H&M','ZARA','ASOS','NEXT ','BOOHOO','SHEIN','NIKE','ADIDAS','SPORTS DIRECT','JD SPORT','CURRYS','AO.COM','VERY ','STUDIO','JOHN LEWIS','IKEA','B&M','WILKO','HOME BARGAIN'] },
+      entertainment: { label: 'Entertainment',    color: '#8b5cf6', kw: ['NETFLIX','SPOTIFY','AMAZON PRIME','DISNEY','SKY','NOW TV','CINEMA','VUE ','ODEON','CINEWORLD','APPLE ','GOOGLE PLAY','PLAYSTATION','XBOX','STEAM','TWITCH','YOUTUBE'] },
+      health:        { label: 'Health & Beauty',  color: '#06b6d4', kw: ['PHARMACY','BOOTS ','SUPERDRUG','LLOYDS PHARM','NHS','DENTIST','OPTICIAN','BARBER','HAIR ','SALON','GYM ','PURE GYM','DAVID LLOYD','NUFFIELD','ANYTIME FITNESS'] },
+      bills:         { label: 'Bills & DD',       color: '#ef4444', kw: ['DIRECT DEBIT','VIRGIN','BRITISH GAS','COUNCIL TAX','WATER','ELECTRIC','INSURANCE','MORTGAGE','VODAFONE','EE ','O2 ','THREE ','TALKTALK','UTILITY','NTLWORLD','SKY BROAD'] },
+      transfers:     { label: 'Transfers & Cash', color: '#374151', kw: ['TRANSFER','PAYPAL','MONZO','REVOLUT','CASH ','ATM ','WITHDRAWAL','CASHPOINT','STANDING ORDER','FASTER PAYMENT'] },
+      other:         { label: 'Other',            color: '#6b7280', kw: [] },
+    };
 
     // ─── Prayer notification scheduling (via Service Worker) ────────
     const schedulePrayerAlerts = async (times) => {
@@ -347,6 +362,13 @@
       const [tasks, setTasks] = useState([]);
       const [shopping, setShopping] = useState([]);
       const [gymLogs, setGymLogs] = useState([]);
+      const [steps, setSteps] = useState(() => {
+        try { const c = JSON.parse(localStorage.getItem('gfit_steps_today') || 'null'); if (c && c.date === todayStr()) return c.count; } catch(e) {}
+        return null;
+      });
+      const [stepTarget, setStepTarget] = useState(() => parseInt(localStorage.getItem('step_target') || '10000'));
+      const [syncing, setSyncing] = useState(false);
+      const [showGFitSetup, setShowGFitSetup] = useState(false);
 
       useEffect(() => {
         const iv = setInterval(() => setNow(new Date()), 30000);
@@ -413,6 +435,42 @@
       const totalBills = bills.reduce((s, b) => s + parseFloat(b.amount || 0), 0);
       const paidAmt = payments.reduce((s, p) => s + parseFloat(p.amount_paid || 0), 0);
       const remaining = totalBills - paidAmt;
+
+      const syncGFitSteps = () => {
+        const clientId = localStorage.getItem('gfit_client_id') || '';
+        if (!clientId) { setShowGFitSetup(true); return; }
+        if (!window.google || !window.google.accounts) { alert('Google services not loaded yet. Try again in a moment.'); return; }
+        const client = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'https://www.googleapis.com/auth/fitness.activity.read',
+          callback: async (resp) => {
+            if (resp.error) { alert('Google sign-in failed: ' + resp.error); return; }
+            setSyncing(true);
+            try {
+              const start = new Date(); start.setHours(0, 0, 0, 0);
+              const body = {
+                aggregateBy: [{ dataTypeName: 'com.google.step_count.delta', dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps' }],
+                bucketByTime: { durationMillis: 86400000 },
+                startTimeMillis: start.getTime(),
+                endTimeMillis: Date.now()
+              };
+              const r = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + resp.access_token, 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+              });
+              const data = await r.json();
+              const count = (data.bucket || []).reduce((total, bucket) => {
+                return total + ((bucket.dataset || [])[0]?.point || []).reduce((s, p) => s + ((p.value || [])[0]?.intVal || 0), 0);
+              }, 0);
+              setSteps(count);
+              localStorage.setItem('gfit_steps_today', JSON.stringify({ date: todayStr(), count }));
+            } catch(e) { alert('Error fetching steps: ' + e.message); }
+            setSyncing(false);
+          }
+        });
+        client.requestAccessToken({ prompt: '' });
+      };
 
       // Gym this week
       const getMon = ds => {
@@ -584,37 +642,167 @@
               </button>
             </div>
 
-            {/* Tasks preview */}
-            {myTasks.length > 0 && (
+            {/* Steps card */}
+            <div className="rounded-2xl p-4" style={{ background: '#1c1c1e' }}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold" style={{ color: '#8e8e93', letterSpacing: 1 }}>TODAY'S STEPS</p>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setShowGFitSetup(true)}
+                    className="flex items-center justify-center rounded-lg text-sm"
+                    style={{ width: 30, height: 30, background: '#2c2c2e', color: '#6b7280' }}>
+                    ⚙️
+                  </button>
+                  <button onClick={syncGFitSteps} disabled={syncing}
+                    className="text-xs px-3 py-1.5 rounded-full font-semibold transition-all active:scale-95"
+                    style={{ background: syncing ? '#1a2e22' : '#0d2318', color: syncing ? '#4b5563' : '#34d399', border: '1px solid #1a3a2a' }}>
+                    {syncing ? '⏳' : '↻ Sync'}
+                  </button>
+                </div>
+              </div>
+              {steps !== null ? (
+                <>
+                  <div className="flex items-end gap-2 mb-3">
+                    <p className="font-bold" style={{ fontSize: 38, lineHeight: 1 }}>{steps.toLocaleString()}</p>
+                    <p className="pb-1 text-sm" style={{ color: '#6b7280' }}>/ {stepTarget.toLocaleString()}</p>
+                  </div>
+                  <div className="h-2.5 rounded-full mb-2" style={{ background: '#2c2c2e' }}>
+                    <div className="h-2.5 rounded-full transition-all duration-700"
+                      style={{ background: steps >= stepTarget ? '#10b981' : '#6366f1', width: Math.min((steps / stepTarget) * 100, 100) + '%' }} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs" style={{ color: steps >= stepTarget ? '#10b981' : '#6b7280' }}>
+                      {steps >= stepTarget ? '🎉 Target reached!' : (stepTarget - steps).toLocaleString() + ' to go'}
+                    </p>
+                    <p className="text-xs font-bold" style={{ color: steps >= stepTarget ? '#10b981' : '#818cf8' }}>
+                      {Math.round((steps / stepTarget) * 100)}%
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center py-3 gap-2">
+                  <span style={{ fontSize: 36 }}>&#x1F45F;</span>
+                  {localStorage.getItem('gfit_client_id') ? (
+                    <p className="text-sm text-center" style={{ color: '#6b7280' }}>Tap Sync to load today's steps from Google Fit</p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-center" style={{ color: '#6b7280' }}>Connect Google Fit to sync steps automatically</p>
+                      <button onClick={() => setShowGFitSetup(true)}
+                        className="text-sm px-4 py-2 rounded-full font-semibold active:scale-95 transition-transform"
+                        style={{ background: '#1a2a4a', color: '#60a5fa' }}>
+                        Set up Google Fit
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Tasks calendar */}
+            {tasks.length > 0 && (
               <button
                 onClick={() => switchTab('tasks')}
                 className="w-full rounded-2xl p-4 text-left active:opacity-80"
                 style={{ background: '#1c1c1e' }}
               >
-                <p className="text-xs font-semibold mb-3" style={{ color: '#8e8e93', letterSpacing: 1 }}>YOUR TASKS</p>
-                <div className="space-y-2.5">
-                  {myTasks.map(t => {
-                    const isOverdue = t.due_date && t.due_date < todayStr();
+                <p className="text-xs font-semibold mb-3" style={{ color: '#8e8e93', letterSpacing: 1 }}>UPCOMING TASKS</p>
+                {/* 14-day calendar strip from today */}
+                <div className="flex gap-1 mb-3">
+                  {Array.from({ length: 14 }, (_, i) => {
+                    const d = new Date(); d.setDate(d.getDate() + i);
+                    const ds = d.toISOString().slice(0, 10);
+                    const dayTasks = tasks.filter(t => t.due_date === ds);
+                    const isToday = i === 0;
+                    const DAY_INITIALS = ['S','M','T','W','T','F','S'];
                     return (
-                      <div key={t.id} className="flex items-center gap-2.5">
-                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: isOverdue ? '#ef4444' : '#10b981' }} />
-                        <p className="text-sm flex-1 truncate">{t.title}</p>
-                        {t.due_date && (
-                          <span className="text-xs flex-shrink-0" style={{ color: isOverdue ? '#ef4444' : '#4b5563' }}>
-                            {isOverdue ? 'overdue' : new Date(t.due_date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      <div key={ds} className="flex-1 flex flex-col items-center gap-0.5">
+                        <span style={{ fontSize: 9, color: isToday ? '#10b981' : '#4b5563' }}>
+                          {DAY_INITIALS[d.getDay()]}
+                        </span>
+                        <div className="w-full flex flex-col items-center justify-center rounded-lg py-1.5"
+                          style={{ background: isToday ? '#1a2e22' : dayTasks.length > 0 ? '#1a1a2e' : 'transparent', border: `1px solid ${isToday ? '#10b981' : dayTasks.length > 0 ? '#4338ca' : 'transparent'}` }}>
+                          <span style={{ fontSize: 11, fontWeight: isToday ? 700 : 400, color: isToday ? '#10b981' : '#9ca3af' }}>
+                            {d.getDate()}
                           </span>
-                        )}
+                          {dayTasks.length > 0 && (
+                            <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#818cf8', marginTop: 2 }} />
+                          )}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
+                {/* Overdue + next up tasks */}
+                <div className="space-y-1.5">
+                  {(() => {
+                    const overdue = tasks.filter(t => t.due_date && t.due_date < todayStr()).slice(0, 2);
+                    const upcoming = tasks.filter(t => !t.due_date || t.due_date >= todayStr()).slice(0, 3 - overdue.length);
+                    return [...overdue, ...upcoming].map(t => {
+                      const isOverdue = t.due_date && t.due_date < todayStr();
+                      return (
+                        <div key={t.id} className="flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: isOverdue ? '#ef4444' : '#818cf8' }} />
+                          <p className="text-xs flex-1 truncate" style={{ color: '#d1d5db' }}>{t.title}</p>
+                          {t.due_date && (
+                            <span style={{ fontSize: 10, color: isOverdue ? '#ef4444' : '#4b5563', flexShrink: 0 }}>
+                              {isOverdue ? 'overdue' : new Date(t.due_date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
                 {tasks.length > 3 && (
-                  <p className="text-xs mt-3" style={{ color: '#4b5563' }}>+{tasks.length - 3} more →</p>
+                  <p className="text-xs mt-2" style={{ color: '#4b5563' }}>+{tasks.length - 3} more →</p>
                 )}
               </button>
             )}
           </div>
         </div>
+
+        {/* Google Fit setup modal */}
+        {showGFitSetup && (
+          <div className="fixed inset-0 z-50 flex items-end" style={{ background: 'rgba(0,0,0,0.8)' }}
+            onClick={() => setShowGFitSetup(false)}>
+            <div className="w-full rounded-t-3xl p-6 pb-10" style={{ background: '#1c1c1e' }}
+              onClick={e => e.stopPropagation()}>
+              <div className="w-10 h-1 rounded-full mx-auto mb-5" style={{ background: '#3a3a3c' }} />
+              <h3 className="text-xl font-bold mb-1">Google Fit Setup</h3>
+              <p className="text-sm mb-5" style={{ color: '#8e8e93' }}>Steps are pulled from Google Fit via OAuth. One-time setup:</p>
+              <ol className="text-sm space-y-2 mb-5" style={{ color: '#d1d5db' }}>
+                <li><span style={{ color: '#60a5fa' }}>1.</span> Go to <strong>console.cloud.google.com</strong></li>
+                <li><span style={{ color: '#60a5fa' }}>2.</span> New project &rarr; APIs &amp; Services &rarr; Enable <strong>Fitness API</strong></li>
+                <li><span style={{ color: '#60a5fa' }}>3.</span> Credentials &rarr; Create OAuth 2.0 Client ID &rarr; Web application</li>
+                <li><span style={{ color: '#60a5fa' }}>4.</span> Add your Netlify URL as an <strong>Authorised JavaScript origin</strong></li>
+                <li><span style={{ color: '#60a5fa' }}>5.</span> Paste the Client ID below</li>
+              </ol>
+              <input
+                className="w-full rounded-xl px-4 py-3 mb-3 text-sm"
+                style={{ background: '#2c2c2e', color: '#fff', border: '1px solid #3a3a3c' }}
+                placeholder="Paste OAuth 2.0 Client ID (ends in .apps.googleusercontent.com)..."
+                defaultValue={localStorage.getItem('gfit_client_id') || ''}
+                onChange={e => localStorage.setItem('gfit_client_id', e.target.value.trim())}
+              />
+              <div className="flex gap-3 mb-3">
+                <button
+                  onClick={() => {
+                    const t = parseInt(prompt('Daily step target (current: ' + stepTarget + '):', stepTarget));
+                    if (t > 0) { setStepTarget(t); localStorage.setItem('step_target', String(t)); }
+                  }}
+                  className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+                  style={{ background: '#2c2c2e', color: '#d1d5db' }}>
+                  Target: {stepTarget.toLocaleString()} steps
+                </button>
+                <button
+                  onClick={() => setShowGFitSetup(false)}
+                  className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+                  style={{ background: '#052e16', color: '#10b981' }}>
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       );
     }
     // ─── Prayers Tab ──────────────────────────────────────────────────
@@ -956,7 +1144,7 @@
     }
 
     // ─── Bills Tab ────────────────────────────────────────────────────
-    function BillsTab() {
+    function BillsTab({ noPadTop }) {
       const [bills, setBills] = useState([]);
       const [payments, setPayments] = useState([]);
       const [showAdd, setShowAdd] = useState(false);
@@ -1052,7 +1240,7 @@
       return (
         <div className="tab-content safe-bottom">
           {/* Header */}
-          <div className="px-4 pt-14 pb-4">
+          <div className={`px-4 pb-4 ${noPadTop ? 'pt-3' : 'pt-14'}`}>
             <h2 className="text-2xl font-bold">Bills & Direct Debits</h2>
             <p className="text-sm mt-0.5" style={{ color: '#8e8e93' }}>{monthName}</p>
           </div>
@@ -1265,6 +1453,246 @@
         </div>
       );
     }
+
+    // ─── Spending Tab ─────────────────────────────────────────────────
+    function SpendingTab({ user }) {
+      const [transactions, setTransactions] = useState([]);
+      const [selectedMonth, setSelectedMonth] = useState(monthYearStr());
+      const [availMonths, setAvailMonths] = useState([]);
+      const [parsing, setParsing] = useState(false);
+      const [parseMsg, setParseMsg] = useState('');
+      const fileRef = useRef(null);
+
+      const loadData = useCallback(async () => {
+        const [txRes, mRes] = await Promise.all([
+          db.from('family_spending').select('*').eq('user_id', user.id).eq('month_year', selectedMonth).order('date', { ascending: false }),
+          db.from('family_spending').select('month_year').eq('user_id', user.id),
+        ]);
+        setTransactions(txRes.data || []);
+        const ms = [...new Set((mRes.data || []).map(r => r.month_year))].sort().reverse();
+        setAvailMonths(ms.length ? ms : [monthYearStr()]);
+      }, [user.id, selectedMonth]);
+
+      useEffect(() => { loadData(); }, [loadData]);
+
+      const categorize = desc => {
+        const u = desc.toUpperCase();
+        for (const [key, cat] of Object.entries(SPEND_CATS)) {
+          if (key === 'other') continue;
+          if (cat.kw.some(k => u.includes(k))) return key;
+        }
+        return 'other';
+      };
+
+      const parsePDF = async (file) => {
+        if (!file) return;
+        setParsing(true); setParseMsg('Reading PDF...');
+        try {
+          const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
+          if (!pdfjsLib) throw new Error('PDF library not loaded — please refresh and try again.');
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          const buf = await file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+          setParseMsg('Scanning ' + pdf.numPages + ' page(s)...');
+          const MMAP = {JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
+          const INCOME = ['SALARY','WAGES','BACS CREDIT','FASTER PAYMENT RECEIVED','PAYMENT RECEIVED','DIVIDEND','INTEREST PAID','REFUND','CASHBACK'];
+          const txns = [];
+          for (let pn = 1; pn <= pdf.numPages; pn++) {
+            const page = await pdf.getPage(pn);
+            const content = await page.getTextContent();
+            const rowMap = {};
+            content.items.forEach(item => {
+              if (!item.str.trim()) return;
+              const y = Math.round(item.transform[5] / 3) * 3;
+              if (!rowMap[y]) rowMap[y] = [];
+              rowMap[y].push({ text: item.str, x: item.transform[4] });
+            });
+            Object.entries(rowMap).sort(([a],[b]) => parseFloat(b)-parseFloat(a)).forEach(([,items]) => {
+              items.sort((a,b) => a.x - b.x);
+              const row = items.map(i => i.text).join(' ').trim();
+              const dm = row.match(/^(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i)
+                      || row.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+              if (!dm) return;
+              let dateStr;
+              if (dm[0].includes('/')) {
+                dateStr = dm[3]+'-'+dm[2]+'-'+dm[1];
+              } else {
+                const mon = String(MMAP[dm[2].toUpperCase()]).padStart(2,'0');
+                dateStr = dm[3]+'-'+mon+'-'+dm[1].padStart(2,'0');
+              }
+              const amtRe = /£?(\d{1,3}(?:,\d{3})*\.\d{2})/g;
+              const amts = [...row.matchAll(amtRe)].map(m => parseFloat(m[1].replace(/,/g,'')));
+              if (!amts.length) return;
+              const firstAmtPos = row.search(/£?\d{1,3}(?:,\d{3})*\.\d{2}/);
+              const desc = row.slice(dm[0].length, firstAmtPos).replace(/\s+/g,' ').trim().toUpperCase();
+              if (!desc || desc.length < 2) return;
+              const txnAmt = amts.length >= 2 ? amts[amts.length-2] : amts[0];
+              const isIncome = INCOME.some(k => desc.includes(k));
+              txns.push({ date: dateStr, description: desc, amount: txnAmt, type: isIncome ? 'credit' : 'debit', category: categorize(desc), month_year: dateStr.slice(0,7), user_id: user.id, source: 'pdf_upload' });
+            });
+          }
+          if (!txns.length) { setParseMsg('No transactions found — make sure this is a NatWest current account statement.'); setParsing(false); return; }
+          setParseMsg('Saving ' + txns.length + ' transactions...');
+          const months = [...new Set(txns.map(t => t.month_year))];
+          for (const my of months) await db.from('family_spending').delete().eq('user_id', user.id).eq('month_year', my).eq('source', 'pdf_upload');
+          for (let i = 0; i < txns.length; i += 100) await db.from('family_spending').insert(txns.slice(i, i+100));
+          setSelectedMonth(months[0]);
+          setParseMsg('✓ Imported ' + txns.length + ' transactions from ' + months.length + ' month(s)');
+          await loadData();
+        } catch(e) { setParseMsg('Error: ' + (e.message || 'Failed to read PDF')); }
+        finally { setParsing(false); if(fileRef.current) fileRef.current.value=''; }
+      };
+
+      const debits = transactions.filter(t => t.type === 'debit');
+      const credits = transactions.filter(t => t.type === 'credit');
+      const totalSpend = debits.reduce((s,t) => s + parseFloat(t.amount), 0);
+      const totalIn = credits.reduce((s,t) => s + parseFloat(t.amount), 0);
+      const catTotals = Object.entries(SPEND_CATS).map(([key, cat]) => ({
+        key, ...cat,
+        total: debits.filter(t => t.category === key).reduce((s,t) => s + parseFloat(t.amount), 0),
+        count: debits.filter(t => t.category === key).length,
+      })).filter(c => c.total > 0).sort((a,b) => b.total - a.total);
+
+      const mlabel = my => {
+        if (!my) return '';
+        const [y,m] = my.split('-');
+        return new Date(parseInt(y), parseInt(m)-1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+      };
+
+      return (
+        <div className="tab-content safe-bottom">
+          <div className="px-4 pt-4 pb-3">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-2xl font-bold">Spending</h2>
+                {availMonths.length > 1 && <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>{availMonths.length} months on record</p>}
+              </div>
+              <button onClick={() => fileRef.current?.click()} disabled={parsing}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold active:scale-95 transition-all"
+                style={{ background: '#10b981', color: '#fff', opacity: parsing ? 0.6 : 1 }}>
+                📄 {parsing ? 'Parsing…' : 'Upload PDF'}
+              </button>
+              <input ref={fileRef} type="file" accept=".pdf" style={{ display: 'none' }} onChange={e => parsePDF(e.target.files[0])} />
+            </div>
+            {parseMsg && (
+              <div className="mb-3 px-3 py-2 rounded-xl text-xs"
+                style={{ background: parseMsg.startsWith('✓') ? '#052e16' : parseMsg.startsWith('Error') ? '#450a0a' : '#1c1c1e', color: parseMsg.startsWith('✓') ? '#6ee7b7' : parseMsg.startsWith('Error') ? '#fca5a5' : '#9ca3af', border: '1px solid ' + (parseMsg.startsWith('✓') ? '#059669' : parseMsg.startsWith('Error') ? '#dc2626' : '#2c2c2e') }}>
+                {parseMsg}
+              </div>
+            )}
+            {availMonths.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+                {availMonths.map(my => (
+                  <button key={my} onClick={() => setSelectedMonth(my)}
+                    className="flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold"
+                    style={{ background: my === selectedMonth ? '#10b981' : '#1c1c1e', color: my === selectedMonth ? '#fff' : '#6b7280' }}>
+                    {mlabel(my)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {transactions.length === 0 && !parsing ? (
+            <div className="text-center py-16 px-8">
+              <p className="text-5xl mb-4">📊</p>
+              <p className="font-semibold text-lg mb-2">No spending data yet</p>
+              <p className="text-sm mb-6" style={{ color: '#6b7280' }}>Upload your NatWest PDF bank statement to see a full spending breakdown</p>
+              <button onClick={() => fileRef.current?.click()} className="px-6 py-3 rounded-xl font-semibold text-sm" style={{ background: '#10b981', color: '#fff' }}>
+                📄 Upload Statement
+              </button>
+            </div>
+          ) : (
+            <div className="px-4 space-y-3">
+              <div className="rounded-2xl p-4" style={{ background: '#1c1c1e' }}>
+                <p className="text-xs font-semibold mb-3" style={{ color: '#8e8e93', letterSpacing: 1 }}>{mlabel(selectedMonth).toUpperCase()}</p>
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-3xl font-bold" style={{ color: '#ef4444' }}>{fmtGBP(totalSpend)}</p>
+                    <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>spent · {debits.length} transactions</p>
+                  </div>
+                  {totalIn > 0 && (
+                    <div className="text-right">
+                      <p className="text-xl font-bold" style={{ color: '#10b981' }}>{fmtGBP(totalIn)}</p>
+                      <p className="text-xs" style={{ color: '#6b7280' }}>money in</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {catTotals.length > 0 && (
+                <div className="rounded-2xl p-4" style={{ background: '#1c1c1e' }}>
+                  <p className="text-xs font-semibold mb-3" style={{ color: '#8e8e93', letterSpacing: 1 }}>BY CATEGORY</p>
+                  <div className="space-y-3.5">
+                    {catTotals.map(cat => (
+                      <div key={cat.key}>
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-medium">{cat.label}</span>
+                          <div>
+                            <span className="text-sm font-bold">{fmtGBP(cat.total)}</span>
+                            <span className="text-xs ml-1.5" style={{ color: '#6b7280' }}>{totalSpend > 0 ? Math.round((cat.total/totalSpend)*100) : 0}%</span>
+                          </div>
+                        </div>
+                        <div className="h-2 rounded-full" style={{ background: '#2c2c2e' }}>
+                          <div className="h-2 rounded-full transition-all duration-700" style={{ background: cat.color, width: totalSpend > 0 ? `${(cat.total/totalSpend)*100}%` : '0%' }} />
+                        </div>
+                        <p className="text-xs mt-0.5" style={{ color: '#4b5563' }}>{cat.count} transaction{cat.count !== 1 ? 's' : ''}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-2xl p-4" style={{ background: '#1c1c1e' }}>
+                <p className="text-xs font-semibold mb-3" style={{ color: '#8e8e93', letterSpacing: 1 }}>TRANSACTIONS ({debits.length})</p>
+                <div className="space-y-2">
+                  {debits.slice(0, 40).map((t, i) => {
+                    const cat = SPEND_CATS[t.category] || SPEND_CATS.other;
+                    return (
+                      <div key={t.id || i} className="flex items-center gap-2.5 py-1">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cat.color }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs truncate" style={{ color: '#d1d5db' }}>{t.description}</p>
+                          <p style={{ fontSize: 10, color: '#4b5563' }}>{t.date} · {cat.label}</p>
+                        </div>
+                        <p className="text-sm font-semibold flex-shrink-0" style={{ color: '#ef4444' }}>{fmtGBP(t.amount)}</p>
+                      </div>
+                    );
+                  })}
+                  {debits.length > 40 && <p className="text-xs text-center pt-1" style={{ color: '#4b5563' }}>+{debits.length - 40} more</p>}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Bills + Spending wrapper ──────────────────────────────────────
+    function BillsSpendingTab({ user }) {
+      const [sub, setSub] = useState('bills');
+      return (
+        <div style={{ background: '#0f0f0f', minHeight: '100vh' }}>
+          <div className="fixed top-0 left-0 right-0 z-30 px-4"
+            style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', background: 'rgba(15,15,15,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid #1c1c1e', paddingBottom: 10 }}>
+            <div className="flex gap-2">
+              {[{ id:'bills', icon:'💳', label:'Bills' }, { id:'spending', icon:'📊', label:'Spending' }].map(t => (
+                <button key={t.id} onClick={() => setSub(t.id)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
+                  style={{ background: sub === t.id ? '#10b981' : '#1c1c1e', color: sub === t.id ? '#fff' : '#6b7280' }}>
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ paddingTop: 70 }}>
+            {sub === 'bills' && <BillsTab noPadTop />}
+            {sub === 'spending' && <SpendingTab user={user} />}
+          </div>
+        </div>
+      );
+    }
+
 
     // ─── Tasks Tab ────────────────────────────────────────────────────
     function TasksTab({ user, allUsers, noPadTop }) {
@@ -1904,16 +2332,185 @@
       );
     }
 
-    // ─── Tasks + Shopping wrapper ──────────────────────────────────────
-    function TasksShoppingTab({ user, allUsers }) {
-      const [sub, setSub] = useState('tasks');
+    // ─── Shopping Wrapper (List + Log) ────────────────────────────────
+    function ShoppingLogTab({ user }) {
+      const [trips, setTrips] = useState([]);
+      const [showAdd, setShowAdd] = useState(false);
+      const [form, setForm] = useState({ date: todayStr(), store: '', amount: '', notes: '' });
+      const [receipt, setReceipt] = useState(null); // base64
+      const imgRef = useRef(null);
+
+      const fetchTrips = () => {
+        db.from('family_shopping_trips').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(50)
+          .then(({ data }) => setTrips(data || []));
+      };
+
+      useEffect(() => { fetchTrips(); }, [user.id]);
+
+      const compressImage = file => new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 900;
+          let w = img.width, h = img.height;
+          if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+          if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/jpeg', 0.55));
+        };
+        img.src = URL.createObjectURL(file);
+      });
+
+      const handleImage = async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const compressed = await compressImage(file);
+        setReceipt(compressed);
+      };
+
+      const saveTrip = async () => {
+        if (!form.amount) return;
+        await db.from('family_shopping_trips').insert({
+          user_id: user.id,
+          date: form.date,
+          store: form.store || null,
+          amount: parseFloat(form.amount),
+          notes: form.notes || null,
+          receipt_img: receipt || null,
+        });
+        setForm({ date: todayStr(), store: '', amount: '', notes: '' });
+        setReceipt(null);
+        setShowAdd(false);
+        fetchTrips();
+      };
+
+      const deleteTrip = async id => {
+        await db.from('family_shopping_trips').delete().eq('id', id);
+        fetchTrips();
+      };
+
+      // Last 8 weeks spending trend
+      const last8 = Array.from({ length: 8 }, (_, i) => {
+        const d = new Date(); d.setDate(d.getDate() - i * 7);
+        const weekEnd = d.toISOString().slice(0, 10);
+        const weekStart = new Date(d); weekStart.setDate(weekStart.getDate() - 6);
+        const ws = weekStart.toISOString().slice(0, 10);
+        const weekTrips = trips.filter(t => t.date >= ws && t.date <= weekEnd);
+        return { ws, total: weekTrips.reduce((s, t) => s + parseFloat(t.amount || 0), 0), count: weekTrips.length };
+      }).reverse();
+      const maxWeek = Math.max(1, ...last8.map(w => w.total));
+      const totalSpend = trips.slice(0, 30).reduce((s, t) => s + parseFloat(t.amount || 0), 0);
+
+      return (
+        <div className="tab-content safe-bottom">
+          <div className="px-4 pt-4 pb-3 flex justify-between items-start">
+            <div>
+              <h2 className="text-2xl font-bold">Shopping Log</h2>
+              <p className="text-sm mt-0.5" style={{ color: '#8e8e93' }}>{trips.length} trips recorded</p>
+            </div>
+            <button onClick={() => setShowAdd(true)} className="px-4 py-2 rounded-xl text-sm font-semibold" style={{ background: '#10b981', color: '#fff' }}>
+              + Log Trip
+            </button>
+          </div>
+
+          <div className="px-4 space-y-3">
+            {/* Trend chart */}
+            {trips.length > 0 && (
+              <div className="rounded-2xl p-4" style={{ background: '#1c1c1e' }}>
+                <p className="text-xs font-semibold mb-3" style={{ color: '#8e8e93', letterSpacing: 1 }}>LAST 8 WEEKS</p>
+                <div className="flex items-end gap-1.5" style={{ height: 72 }}>
+                  {last8.map((w, i) => (
+                    <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+                      {w.total > 0 && (
+                        <p style={{ fontSize: 8, color: '#6b7280' }}>{fmtGBP(w.total)}</p>
+                      )}
+                      <div className="w-full rounded-t transition-all"
+                        style={{ height: `${Math.max(4, (w.total / maxWeek) * 100)}%`, background: i === 7 ? '#10b981' : '#6366f1' }} />
+                      <span style={{ fontSize: 8, color: '#4b5563' }}>
+                        {new Date(w.ws + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Trips list */}
+            {trips.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-5xl mb-4">🧾</p>
+                <p className="font-semibold text-lg mb-2">No trips logged yet</p>
+                <p className="text-sm" style={{ color: '#6b7280' }}>Log a shopping trip to start tracking your spend</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {trips.map(trip => (
+                  <div key={trip.id} className="rounded-2xl p-4" style={{ background: '#1c1c1e' }}>
+                    <div className="flex items-start justify-between mb-1">
+                      <div>
+                        <p className="font-semibold">{trip.store || 'Shopping trip'}</p>
+                        <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>
+                          {new Date(trip.date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-bold" style={{ color: '#10b981' }}>{fmtGBP(trip.amount)}</p>
+                        <button onClick={() => deleteTrip(trip.id)} className="text-xs mt-1" style={{ color: '#4b5563' }}>remove</button>
+                      </div>
+                    </div>
+                    {trip.notes && <p className="text-xs mt-1" style={{ color: '#6b7280' }}>{trip.notes}</p>}
+                    {trip.receipt_img && (
+                      <img src={trip.receipt_img} alt="Receipt" className="mt-2 rounded-xl w-full object-cover" style={{ maxHeight: 200 }} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {showAdd && (
+            <Modal title="Log Shopping Trip" onClose={() => { setShowAdd(false); setReceipt(null); }}>
+              <div className="space-y-4 pb-2">
+                <Field label="Date">
+                  <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className={inputCls} style={inputStyle} />
+                </Field>
+                <Field label="Store / Supermarket">
+                  <input value={form.store} onChange={e => setForm(f => ({ ...f, store: e.target.value }))} placeholder="e.g. Tesco, Aldi…" className={inputCls} style={inputStyle} />
+                </Field>
+                <Field label="Amount spent (£)">
+                  <input type="number" step="0.01" min="0" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="0.00" className={inputCls} style={inputStyle} />
+                </Field>
+                <Field label="Notes (optional)">
+                  <input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Weekly shop, top-up…" className={inputCls} style={inputStyle} />
+                </Field>
+                <Field label="Receipt photo (optional)">
+                  <input ref={imgRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleImage} />
+                  <button onClick={() => imgRef.current?.click()}
+                    className="w-full py-3 rounded-xl text-sm font-semibold transition-all active:scale-98"
+                    style={{ background: '#2c2c2e', color: receipt ? '#10b981' : '#9ca3af', border: '1px solid #3a3a3c' }}>
+                    {receipt ? '✓ Photo added — tap to replace' : '📷 Take photo / choose from gallery'}
+                  </button>
+                  {receipt && <img src={receipt} alt="preview" className="mt-2 rounded-xl w-full object-cover" style={{ maxHeight: 160 }} />}
+                </Field>
+                <button onClick={saveTrip} className="w-full py-3.5 rounded-xl font-semibold transition-all active:scale-98" style={{ background: '#10b981', color: '#fff' }}>
+                  Save Trip
+                </button>
+              </div>
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    function ShoppingWrapper({ user, allUsers }) {
+      const [sub, setSub] = useState('list');
       return (
         <div style={{ background: '#0f0f0f', minHeight: '100vh' }}>
-          {/* Sub-tab bar */}
           <div className="fixed top-0 left-0 right-0 z-30 px-4"
             style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', background: 'rgba(15,15,15,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid #1c1c1e', paddingBottom: 10 }}>
             <div className="flex gap-2">
-              {[{ id:'tasks', icon:'✅', label:'Tasks' }, { id:'shopping', icon:'🛒', label:'Shopping' }].map(t => (
+              {[{ id:'list', icon:'🛒', label:'List' }, { id:'log', icon:'🧾', label:'Log' }].map(t => (
                 <button key={t.id} onClick={() => setSub(t.id)}
                   className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
                   style={{ background: sub === t.id ? '#10b981' : '#1c1c1e', color: sub === t.id ? '#fff' : '#6b7280' }}>
@@ -1923,20 +2520,22 @@
             </div>
           </div>
           <div style={{ paddingTop: 70 }}>
-            {sub === 'tasks'    && <TasksTab    user={user} allUsers={allUsers} noPadTop />}
-            {sub === 'shopping' && <ShoppingTab user={user} allUsers={allUsers} noPadTop />}
+            {sub === 'list' && <ShoppingTab user={user} allUsers={allUsers} noPadTop />}
+            {sub === 'log'  && <ShoppingLogTab user={user} />}
           </div>
         </div>
       );
     }
 
+
     // ─── Bottom Nav ───────────────────────────────────────────────────
     function BottomNav({ active, onChange }) {
       const tabs = [
-        { id: 'home',    icon: '🏠', label: 'Home'    },
-        { id: 'prayers', icon: '🕌', label: 'Prayers' },
-        { id: 'bills',   icon: '💳', label: 'Bills'   },
-        { id: 'tasks',   icon: '✅', label: 'Tasks'   },
+        { id: 'home',     icon: '🏠', label: 'Home'     },
+        { id: 'prayers',  icon: '🕌', label: 'Prayers'  },
+        { id: 'bills',    icon: '💳', label: 'Bills'    },
+        { id: 'tasks',    icon: '✅', label: 'Tasks'    },
+        { id: 'shopping', icon: '🛒', label: 'Shopping' },
       ];
 
       return (
@@ -2013,10 +2612,11 @@
           </div>
 
           {/* Tabs */}
-          {tab === 'home'    && <HomeTab    user={user} switchTab={setTab} />}
-          {tab === 'prayers' && <PrayersWellnessTab user={user} allUsers={allUsers} />}
-          {tab === 'bills'   && <BillsTab   user={user} />}
-          {tab === 'tasks'   && <TasksShoppingTab user={user} allUsers={allUsers} />}
+          {tab === 'home'     && <HomeTab           user={user} switchTab={setTab} />}
+          {tab === 'prayers'  && <PrayersWellnessTab user={user} allUsers={allUsers} />}
+          {tab === 'bills'    && <BillsSpendingTab  user={user} />}
+          {tab === 'tasks'    && <TasksTab           user={user} allUsers={allUsers} />}
+          {tab === 'shopping' && <ShoppingWrapper   user={user} allUsers={allUsers} />}
 
           <BottomNav active={tab} onChange={setTab} />
         </div>
