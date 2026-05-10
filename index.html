@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Miah Family Hub</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html { overscroll-behavior: none; height: 100%; }
+    body {
+      margin: 0; padding: 0;
+      background: #0f0f0f;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overscroll-behavior: none;
+      -webkit-font-smoothing: antialiased;
+    }
+    #root { min-height: 100vh; }
+    ::-webkit-scrollbar { width: 0; background: transparent; }
+    input, select, textarea {
+      -webkit-appearance: none;
+      outline: none;
+    }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .tab-content { height: 100vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .safe-bottom { padding-bottom: max(80px, calc(env(safe-area-inset-bottom) + 70px)); }
+    button { cursor: pointer; border: none; background: none; padding: 0; }
+    button:active { opacity: 0.85; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useMemo, useRef } = React;
+    const { createClient } = supabase;
+
+    // ─── Supabase ────────────────────────────────────────────────────
+    const db = createClient(
+      'https://wgqamqzlfnjcqyprphkw.supabase.co',
+      'sb_publishable_lWHxlKp0imCmSFHs3KF78w_2KFrEJBE'
+    );
+
+    // ─── Prayer Time Engine ──────────────────────────────────────────
+    const toM = (h, m) => h * 60 + m;
+
+    // 2026 Masjid-e-Anisul-Islam Blackburn timetable anchors
+    // Format: [month, day, [fajr, dhuhr, asr, maghrib, isha]] all in minutes from midnight
+    const ANCHORS = [
+      [1,  1,  [toM(6,47), toM(12,19), toM(14,13), toM(16, 5), toM(17,48)]],
+      [1,  15, [toM(6,39), toM(12,24), toM(14,32), toM(16,25), toM(18, 6)]],
+      [1,  31, [toM(6,17), toM(12,28), toM(15, 0), toM(16,55), toM(18,33)]],
+      [2,  1,  [toM(6,16), toM(12,29), toM(15, 2), toM(16,57), toM(18,35)]],
+      [2,  15, [toM(5,49), toM(12,29), toM(15,28), toM(17,25), toM(18,58)]],
+      [2,  28, [toM(5,20), toM(12,27), toM(15,51), toM(17,51), toM(19,19)]],
+      [3,  1,  [toM(5,18), toM(12,27), toM(15,53), toM(17,53), toM(19,21)]],
+      [3,  15, [toM(4,44), toM(12,24), toM(16,15), toM(18,19), toM(19,42)]],
+      [3,  29, [toM(5,13), toM(13,50), toM(18,30), toM(20,45), toM(21,20)]],
+      [4,  1,  [toM(5, 6), toM(13,19), toM(17,40), toM(19,51), toM(21,10)]],
+      [4,  15, [toM(4,35), toM(13,15), toM(17,58), toM(20,17), toM(21,29)]],
+      [4,  30, [toM(3,54), toM(13,12), toM(18,16), toM(20,44), toM(21,46)]],
+      [5,  1,  [toM(3,51), toM(13,12), toM(18,17), toM(20,46), toM(21,47)]],
+      [5,  15, [toM(3,20), toM(13,11), toM(18,32), toM(21,11), toM(22,12)]],
+      [5,  31, [toM(2,50), toM(13,13), toM(18,45), toM(21,34), toM(22,34)]],
+      [6,  1,  [toM(2,49), toM(13,13), toM(18,46), toM(21,35), toM(22,35)]],
+      [6,  15, [toM(2,35), toM(13,39), toM(18,53), toM(21,47), toM(22,47)]],
+      [6,  30, [toM(2,43), toM(13,19), toM(18,56), toM(21,49), toM(22,49)]],
+      [7,  1,  [toM(2,45), toM(13,19), toM(18,56), toM(21,48), toM(22,48)]],
+      [7,  15, [toM(3, 6), toM(13,21), toM(18,50), toM(21,35), toM(22,36)]],
+      [7,  31, [toM(3,34), toM(13,21), toM(18,38), toM(21,13), toM(22,15)]],
+      [8,  1,  [toM(3,36), toM(13,21), toM(18,36), toM(21,12), toM(22,14)]],
+      [8,  15, [toM(4, 5), toM(13,19), toM(18,18), toM(20,44), toM(21,53)]],
+      [8,  31, [toM(4,37), toM(13,15), toM(17,51), toM(20, 7), toM(21,22)]],
+      [9,  1,  [toM(4,40), toM(13,15), toM(17,50), toM(20, 5), toM(21,19)]],
+      [9,  15, [toM(5, 4), toM(13,10), toM(17,22), toM(19,30), toM(20,48)]],
+      [9,  30, [toM(5,36), toM(13, 5), toM(16,51), toM(18,53), toM(20,16)]],
+      [10, 1,  [toM(5,38), toM(13, 4), toM(16,49), toM(18,51), toM(20,15)]],
+      [10, 15, [toM(5,50), toM(13, 2), toM(16,17), toM(18,15), toM(19,44)]],
+      [10, 25, [toM(5, 6), toM(11,59), toM(14,59), toM(16,55), toM(18,25)]],
+      [10, 31, [toM(5,27), toM(11,59), toM(14,47), toM(16,43), toM(18,14)]],
+      [11, 1,  [toM(5,30), toM(11,59), toM(14,45), toM(16,41), toM(18,13)]],
+      [11, 15, [toM(5,49), toM(11,59), toM(14,23), toM(16,17), toM(17,58)]],
+      [11, 30, [toM(6,17), toM(12, 4), toM(14, 7), toM(15,59), toM(17,41)]],
+      [12, 1,  [toM(6,18), toM(12, 4), toM(14, 6), toM(15,58), toM(17,41)]],
+      [12, 15, [toM(6,30), toM(12, 8), toM(14, 2), toM(15,54), toM(17,38)]],
+      [12, 31, [toM(6,46), toM(12,18), toM(14,12), toM(16, 4), toM(17,47)]],
+    ];
+
+    function getPrayerTimes(date) {
+      const year = date.getFullYear();
+      const jan1 = new Date(year, 0, 1);
+      const targetDay = Math.round((new Date(year, date.getMonth(), date.getDate()) - jan1) / 86400000);
+
+      const days = ANCHORS.map(([month, day, times]) => ({
+        day: Math.round((new Date(year, month - 1, day) - jan1) / 86400000),
+        times,
+      }));
+
+      let before = days[0];
+      let after = days[days.length - 1];
+      for (const a of days) { if (a.day <= targetDay) before = a; }
+      for (const a of [...days].reverse()) { if (a.day >= targetDay) { after = a; break; } }
+
+      const t = before.day === after.day ? 0 : (targetDay - before.day) / (after.day - before.day);
+      const interp = before.times.map((bv, i) => Math.round(bv + t * (after.times[i] - bv)));
+      const fmt = m => `${Math.floor(m / 60)}:${(m % 60).toString().padStart(2, '0')}`;
+      return {
+        fajr: fmt(interp[0]),
+        dhuhr: fmt(interp[1]),
+        asr: fmt(interp[2]),
+        maghrib: fmt(interp[3]),
+        isha: fmt(interp[4]),
+      };
+    }
+
+    // ─── Utilities ───────────────────────────────────────────────────
+    const ordinal = n => {
+      const s = ['th', 'st', 'nd', 'rd'];
+      const v = n % 100;
+      return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+    };
+
+    const fmtGBP = n => `£${parseFloat(n || 0).toFixed(2)}`;
+
+    const todayStr = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+
+    const monthYearStr = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+
+    const PRAYER_KEYS = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+    const PRAYER_LABELS = { fajr: 'Fajr', dhuhr: 'Dhuhr', asr: 'Asr', maghrib: 'Maghrib', isha: 'Isha' };
+    const PRAYER_ICONS = { fajr: '🌙', dhuhr: '☀️', asr: '🌤️', maghrib: '🌅', isha: '🌃' };
+
+    const CATEGORIES = ['bill', 'direct debit', 'utility', 'subscription', 'insurance', 'mortgage', 'other'];
+    const CAT_STYLE = {
+      'bill':          { bg: '#052e16', text: '#6ee7b7', border: '#064e3b' },
+      'direct debit':  { bg: '#1e3a5f', text: '#93c5fd', border: '#1d4ed8' },
+      'utility':       { bg: '#3b2f00', text: '#fcd34d', border: '#b45309' },
+      'subscription':  { bg: '#2e1065', text: '#c4b5fd', border: '#6d28d9' },
+      'insurance':     { bg: '#431407', text: '#fca5a1', border: '#dc2626' },
+      'mortgage':      { bg: '#450a0a', text: '#fca5a1', border: '#b91c1c' },
+      'other':         { bg: '#1a1a1a', text: '#9ca3af', border: '#374151' },
+    };
+
+    const SAMPLE_BILLS = [
+      { name: 'Mortgage',       amount: 1200.00, due_day: 1,  category: 'mortgage'      },
+      { name: 'Council Tax',    amount: 185.00,  due_day: 5,  category: 'bill'          },
+      { name: 'Virgin Media',   amount: 65.00,   due_day: 8,  category: 'direct debit'  },
+      { name: 'British Gas',    amount: 115.00,  due_day: 12, category: 'utility'       },
+      { name: 'Car Insurance',  amount: 89.99,   due_day: 15, category: 'insurance'     },
+      { name: 'Water Bill',     amount: 42.00,   due_day: 22, category: 'utility'       },
+      { name: 'Netflix',        amount: 10.99,   due_day: 25, category: 'subscription'  },
+    ];
+
+    // ─── Modal ───────────────────────────────────────────────────────
+    function Modal({ title, onClose, children }) {
+      return (
+        <div
+          className="fixed inset-0 z-50 flex items-end"
+          style={{ background: 'rgba(0,0,0,0.75)' }}
+          onClick={e => e.target === e.currentTarget && onClose()}
+        >
+          <div
+            className="w-full rounded-t-3xl"
+            style={{ background: '#1c1c1e', maxHeight: '90vh', overflowY: 'auto', paddingBottom: 'max(24px, env(safe-area-inset-bottom))' }}
+          >
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 rounded-full" style={{ background: '#3a3a3c' }} />
+            </div>
+            <div className="px-5 pb-2 pt-2 flex justify-between items-center">
+              <h3 className="text-lg font-bold">{title}</h3>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 text-xl"
+                style={{ background: '#2c2c2e' }}
+              >×</button>
+            </div>
+            <div className="px-5 pt-1">{children}</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Field ───────────────────────────────────────────────────────
+    function Field({ label, children }) {
+      return (
+        <div>
+          <label className="block text-xs font-medium mb-1.5" style={{ color: '#8e8e93' }}>{label}</label>
+          {children}
+        </div>
+      );
+    }
+
+    const inputCls = "w-full px-4 py-3 rounded-xl text-white text-sm";
+    const inputStyle = { background: '#2c2c2e', border: '1px solid #3a3a3c' };
+
+    // ─── Login Screen ─────────────────────────────────────────────────
+    function LoginScreen({ onLogin }) {
+      const [users, setUsers] = useState([]);
+      const [selected, setSelected] = useState(null);
+      const [pin, setPin] = useState('');
+      const [error, setError] = useState('');
+      const [shaking, setShaking] = useState(false);
+
+      useEffect(() => {
+        db.from('family_users').select('*').order('name').then(({ data }) => setUsers(data || []));
+      }, []);
+
+      const handleDigit = d => {
+        if (pin.length >= 4) return;
+        const next = pin + d;
+        setPin(next);
+        setError('');
+        if (next.length === 4) {
+          setTimeout(() => {
+            if (next === selected.pin) {
+              onLogin(selected);
+            } else {
+              setShaking(true);
+              setTimeout(() => { setShaking(false); setPin(''); setError('Wrong PIN — try again'); }, 500);
+            }
+          }, 100);
+        }
+      };
+
+      const handleBack = () => { setPin(p => p.slice(0, -1)); setError(''); };
+
+      const PadBtn = ({ label, onClick, sub }) => (
+        <button
+          onClick={onClick}
+          className="flex flex-col items-center justify-center rounded-full transition-all active:scale-90"
+          style={{ background: '#1c1c1e', width: 78, height: 78, border: '1px solid #2c2c2e' }}
+        >
+          <span className="text-2xl font-light text-white">{label}</span>
+          {sub && <span className="text-xs" style={{ color: '#6b7280', letterSpacing: 1 }}>{sub}</span>}
+        </button>
+      );
+
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: '#0f0f0f' }}>
+          <div className="mb-8 text-center">
+            <div className="text-5xl mb-3">🏡</div>
+            <h1 className="text-3xl font-bold tracking-tight">Miah Family</h1>
+            <p className="text-sm mt-1" style={{ color: '#6b7280' }}>Family Hub</p>
+          </div>
+
+          {!selected ? (
+            <div className="w-full max-w-xs space-y-3">
+              <p className="text-center text-sm mb-5" style={{ color: '#8e8e93' }}>Who's logging in?</p>
+              {users.map(u => (
+                <button
+                  key={u.id}
+                  onClick={() => { setSelected(u); setPin(''); setError(''); }}
+                  className="w-full py-4 rounded-2xl font-semibold text-lg transition-all active:scale-98"
+                  style={{ background: '#1c1c1e', border: '1px solid #2c2c2e' }}
+                >
+                  {u.name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="w-full max-w-xs flex flex-col items-center">
+              <button
+                onClick={() => { setSelected(null); setPin(''); setError(''); }}
+                className="self-start mb-6 text-sm flex items-center gap-1"
+                style={{ color: '#10b981' }}
+              >
+                ← Back
+              </button>
+              <p className="text-lg font-semibold mb-1">Hi, {selected.name}!</p>
+              <p className="text-sm mb-8" style={{ color: '#8e8e93' }}>Enter your 4-digit PIN</p>
+
+              {/* Dots */}
+              <div className={`flex gap-5 mb-3 transition-all ${shaking ? 'animate-bounce' : ''}`}>
+                {[0,1,2,3].map(i => (
+                  <div
+                    key={i}
+                    className="w-4 h-4 rounded-full transition-all duration-150"
+                    style={{ background: i < pin.length ? '#10b981' : 'transparent', border: '2px solid', borderColor: i < pin.length ? '#10b981' : '#4b5563' }}
+                  />
+                ))}
+              </div>
+              {error && <p className="text-sm mb-4" style={{ color: '#ef4444' }}>{error}</p>}
+              {!error && <div className="mb-4 h-5" />}
+
+              {/* Numpad */}
+              <div className="grid grid-cols-3 gap-4">
+                {[1,2,3,4,5,6,7,8,9].map(d => (
+                  <PadBtn key={d} label={d} onClick={() => handleDigit(String(d))} />
+                ))}
+                <div />
+                <PadBtn label="0" onClick={() => handleDigit('0')} />
+                <button
+                  onClick={handleBack}
+                  className="flex items-center justify-center rounded-full text-2xl text-gray-400 transition-all active:scale-90"
+                  style={{ width: 78, height: 78 }}
+                >⌫</button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Home Tab ─────────────────────────────────────────────────────
+    function HomeTab({ user, switchTab }) {
+      const [now, setNow] = useState(new Date());
+      const [prayerLogs, setPrayerLogs] = useState([]);
+      const [bills, setBills] = useState([]);
+      const [payments, setPayments] = useState([]);
+      const [tasks, setTasks] = useState([]);
+      const [shopping, setShopping] = useState([]);
+
+      useEffect(() => {
+        const iv = setInterval(() => setNow(new Date()), 30000);
+        return () => clearInterval(iv);
+      }, []);
+
+      useEffect(() => {
+        const t = todayStr(), my = monthYearStr();
+        Promise.all([
+          db.from('prayer_log').select('*').eq('user_id', user.id).eq('prayer_date', t),
+          db.from('bills').select('*').eq('is_active', true),
+          db.from('bill_payments').select('*').eq('month_year', my),
+          db.from('family_tasks').select('*').eq('completed', false),
+          db.from('shopping_items').select('*').eq('completed', false),
+        ]).then(([pl, bl, bp, tk, sh]) => {
+          setPrayerLogs(pl.data || []);
+          setBills(bl.data || []);
+          setPayments(bp.data || []);
+          setTasks(tk.data || []);
+          setShopping(sh.data || []);
+        });
+      }, [user.id]);
+
+      const prayerTimes = useMemo(() => getPrayerTimes(now), [now.toDateString()]);
+      const donePrayers = prayerLogs.length;
+
+      const greeting = () => {
+        const h = now.getHours();
+        if (h < 5)  return 'Assalamu Alaikum 🌙';
+        if (h < 12) return 'Good morning ☀️';
+        if (h < 17) return 'Good afternoon 🌤️';
+        if (h < 20) return 'Good evening 🌅';
+        return 'Good night 🌃';
+      };
+
+      const nextPrayer = useMemo(() => {
+        const nowMins = now.getHours() * 60 + now.getMinutes();
+        for (const key of PRAYER_KEYS) {
+          const [h, m] = prayerTimes[key].split(':').map(Number);
+          const pMins = h * 60 + m;
+          if (pMins > nowMins) {
+            const diff = pMins - nowMins;
+            const hrs = Math.floor(diff / 60), mins = diff % 60;
+            return {
+              name: PRAYER_LABELS[key],
+              time: prayerTimes[key],
+              in: hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`,
+            };
+          }
+        }
+        return { name: 'Fajr', time: prayerTimes.fajr, in: 'Tomorrow' };
+      }, [now, prayerTimes]);
+
+      const paidIds = new Set(payments.map(p => p.bill_id));
+      const day = now.getDate();
+      const dueSoon = bills.filter(b => b.due_day >= day && b.due_day <= day + 7 && !paidIds.has(b.id));
+      const myTasks = tasks.filter(t => !t.assigned_to || t.assigned_to === user.id).slice(0, 3);
+      const totalBills = bills.reduce((s, b) => s + parseFloat(b.amount || 0), 0);
+      const paidAmt = payments.reduce((s, p) => s + parseFloat(p.amount_paid || 0), 0);
+
+      return (
+        <div className="tab-content safe-bottom">
+          <div className="px-4 pt-14 pb-2">
+            {/* Header */}
+            <p className="text-sm" style={{ color: '#8e8e93' }}>{greeting()}</p>
+            <h1 className="text-3xl font-bold mt-0.5">{user.name}</h1>
+            <p className="text-sm mt-1" style={{ color: '#6b7280' }}>
+              {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
+          </div>
+
+          <div className="px-4 space-y-3 pt-3">
+            {/* Prayer card */}
+            <button
+              onClick={() => switchTab('prayers')}
+              className="w-full rounded-2xl p-4 text-left active:opacity-80 transition-opacity"
+              style={{ background: '#1c1c1e' }}
+            >
+              <div className="flex justify-between items-start mb-3">
+                <div>
+                  <p className="text-xs font-medium mb-0.5" style={{ color: '#8e8e93' }}>TODAY'S PRAYERS</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-4xl font-bold" style={{ color: '#10b981' }}>{donePrayers}</span>
+                    <span className="text-xl font-light" style={{ color: '#4b5563' }}>/5</span>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-medium mb-0.5" style={{ color: '#8e8e93' }}>NEXT PRAYER</p>
+                  <p className="text-sm font-semibold" style={{ color: '#10b981' }}>{nextPrayer.name}</p>
+                  <p className="text-xs" style={{ color: '#6b7280' }}>{nextPrayer.time} · {nextPrayer.in}</p>
+                </div>
+              </div>
+              {/* Progress */}
+              <div className="h-1.5 rounded-full mb-2" style={{ background: '#2c2c2e' }}>
+                <div className="h-1.5 rounded-full transition-all duration-500" style={{ background: '#10b981', width: `${(donePrayers / 5) * 100}%` }} />
+              </div>
+              <div className="flex gap-1.5">
+                {PRAYER_KEYS.map(k => {
+                  const done = prayerLogs.some(l => l.prayer_name === k);
+                  return (
+                    <div key={k} className="flex-1 text-center">
+                      <div className="h-1 rounded-full mb-1" style={{ background: done ? '#10b981' : '#2c2c2e' }} />
+                      <span className="text-xs" style={{ color: done ? '#10b981' : '#4b5563', fontSize: 10 }}>{PRAYER_LABELS[k].slice(0,3)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </button>
+
+            {/* Bills card */}
+            <button
+              onClick={() => switchTab('bills')}
+              className="w-full rounded-2xl p-4 text-left active:opacity-80 transition-opacity"
+              style={{ background: '#1c1c1e' }}
+            >
+              <p className="text-xs font-medium mb-2" style={{ color: '#8e8e93' }}>BILLS THIS MONTH</p>
+              <div className="flex justify-between items-end mb-3">
+                <div>
+                  <p className="text-3xl font-bold">{fmtGBP(totalBills)}</p>
+                  <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>total going out</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xl font-semibold" style={{ color: '#10b981' }}>{fmtGBP(paidAmt)}</p>
+                  <p className="text-xs" style={{ color: '#6b7280' }}>paid · {paidIds.size}/{bills.length} bills</p>
+                </div>
+              </div>
+              <div className="h-1.5 rounded-full" style={{ background: '#2c2c2e' }}>
+                <div className="h-1.5 rounded-full" style={{ background: '#10b981', width: totalBills > 0 ? `${Math.min((paidAmt / totalBills) * 100, 100)}%` : '0%' }} />
+              </div>
+              {dueSoon.length > 0 && (
+                <p className="text-xs mt-2" style={{ color: '#f59e0b' }}>⚠️ {dueSoon.length} bill{dueSoon.length > 1 ? 's' : ''} due in the next 7 days</p>
+              )}
+            </button>
+
+            {/* Stats row */}
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => switchTab('tasks')}
+                className="rounded-2xl p-4 text-left active:opacity-80"
+                style={{ background: '#1c1c1e' }}
+              >
+                <p className="text-2xl mb-1">✅</p>
+                <p className="text-2xl font-bold">{tasks.length}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#8e8e93' }}>tasks pending</p>
+              </button>
+              <button
+                onClick={() => switchTab('shopping')}
+                className="rounded-2xl p-4 text-left active:opacity-80"
+                style={{ background: '#1c1c1e' }}
+              >
+                <p className="text-2xl mb-1">🛒</p>
+                <p className="text-2xl font-bold">{shopping.length}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#8e8e93' }}>items needed</p>
+              </button>
+            </div>
+
+            {/* Tasks preview */}
+            {myTasks.length > 0 && (
+              <button
+                onClick={() => switchTab('tasks')}
+                className="w-full rounded-2xl p-4 text-left active:opacity-80"
+                style={{ background: '#1c1c1e' }}
+              >
+                <p className="text-xs font-medium mb-2" style={{ color: '#8e8e93' }}>YOUR TASKS</p>
+                <div className="space-y-2">
+                  {myTasks.map(t => (
+                    <div key={t.id} className="flex items-center gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#10b981' }} />
+                      <p className="text-sm truncate">{t.title}</p>
+                      {t.due_date && t.due_date < todayStr() && (
+                        <span className="text-xs ml-auto flex-shrink-0" style={{ color: '#ef4444' }}>overdue</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Prayers Tab ──────────────────────────────────────────────────
+    function PrayersTab({ user }) {
+      const [date, setDate] = useState(todayStr());
+      const [logs, setLogs] = useState([]);
+      const [busy, setBusy] = useState({});
+
+      const prayerTimes = useMemo(() => getPrayerTimes(new Date(date + 'T12:00:00')), [date]);
+
+      const fetchLogs = () => {
+        db.from('prayer_log').select('*').eq('user_id', user.id).eq('prayer_date', date)
+          .then(({ data }) => setLogs(data || []));
+      };
+
+      useEffect(() => { fetchLogs(); }, [date, user.id]);
+
+      const toggle = async key => {
+        if (busy[key]) return;
+        setBusy(b => ({ ...b, [key]: true }));
+        const existing = logs.find(l => l.prayer_name === key);
+        if (existing) {
+          await db.from('prayer_log').delete().eq('id', existing.id);
+          setLogs(prev => prev.filter(l => l.id !== existing.id));
+        } else {
+          const { data } = await db.from('prayer_log')
+            .insert({ user_id: user.id, prayer_name: key, prayer_date: date })
+            .select().single();
+          if (data) setLogs(prev => [...prev, data]);
+        }
+        setBusy(b => ({ ...b, [key]: false }));
+      };
+
+      const done = logs.length;
+      const isToday = date === todayStr();
+
+      // Next prayer for today
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      const nextKey = isToday ? PRAYER_KEYS.find(k => {
+        const [h, m] = prayerTimes[k].split(':').map(Number);
+        return (h * 60 + m) > nowMins;
+      }) : null;
+
+      return (
+        <div className="tab-content safe-bottom">
+          <div className="px-4 pt-14 pb-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-bold">Prayers</h2>
+                <p className="text-sm mt-0.5" style={{ color: '#8e8e93' }}>
+                  {done}/5 completed · {isToday ? 'Today' : new Date(date + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                </p>
+              </div>
+              <input
+                type="date"
+                value={date}
+                max={todayStr()}
+                onChange={e => setDate(e.target.value)}
+                className="text-xs rounded-xl px-3 py-2"
+                style={{ background: '#2c2c2e', color: '#fff', border: '1px solid #3a3a3c' }}
+              />
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="px-4 mb-4">
+            <div className="h-2 rounded-full" style={{ background: '#2c2c2e' }}>
+              <div className="h-2 rounded-full transition-all duration-500" style={{ background: '#10b981', width: `${(done / 5) * 100}%` }} />
+            </div>
+          </div>
+
+          <div className="px-4 space-y-2.5">
+            {PRAYER_KEYS.map(key => {
+              const isDone = logs.some(l => l.prayer_name === key);
+              const isNext = key === nextKey;
+              const isBusy = busy[key];
+
+              return (
+                <button
+                  key={key}
+                  onClick={() => toggle(key)}
+                  disabled={isBusy}
+                  className="w-full rounded-2xl px-4 py-4 flex items-center gap-4 text-left transition-all active:scale-98"
+                  style={{
+                    background: isDone ? '#052e16' : isNext ? '#1a2e1a' : '#1c1c1e',
+                    border: `1px solid ${isDone ? '#059669' : isNext ? '#14532d' : '#2c2c2e'}`,
+                  }}
+                >
+                  {/* Icon circle */}
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center text-xl flex-shrink-0 transition-all"
+                    style={{ background: isDone ? '#059669' : '#2c2c2e' }}
+                  >
+                    {isDone ? '✓' : PRAYER_ICONS[key]}
+                  </div>
+
+                  <div className="flex-1">
+                    <p className="font-semibold">{PRAYER_LABELS[key]}</p>
+                    <p className="text-sm" style={{ color: isDone ? '#6ee7b7' : '#6b7280' }}>
+                      {prayerTimes[key]}
+                      {isNext && !isDone && <span style={{ color: '#10b981' }}> · up next</span>}
+                    </p>
+                  </div>
+
+                  {isDone ? (
+                    <span className="text-sm font-semibold" style={{ color: '#10b981' }}>Done ✓</span>
+                  ) : (
+                    <div className="w-6 h-6 rounded-full border-2" style={{ borderColor: '#4b5563' }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {done === 5 && (
+            <div className="mx-4 mt-5 rounded-2xl p-5 text-center" style={{ background: '#052e16', border: '1px solid #059669' }}>
+              <p className="text-3xl mb-2">🌟</p>
+              <p className="font-bold text-lg" style={{ color: '#6ee7b7' }}>All 5 prayers complete!</p>
+              <p className="text-sm mt-1" style={{ color: '#059669' }}>Alhamdulillah — may Allah accept.</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Bills Tab ────────────────────────────────────────────────────
+    function BillsTab() {
+      const [bills, setBills] = useState([]);
+      const [payments, setPayments] = useState([]);
+      const [showAdd, setShowAdd] = useState(false);
+      const [editing, setEditing] = useState(null);
+      const [deleteConfirm, setDeleteConfirm] = useState(null);
+      const [form, setForm] = useState({ name: '', amount: '', due_day: '', category: 'bill' });
+      const [seeded, setSeeded] = useState(false);
+
+      const my = monthYearStr();
+      const today = new Date();
+      const currentDay = today.getDate();
+      const monthName = today.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
+      const fetchAll = useCallback(async () => {
+        const [{ data: b }, { data: p }] = await Promise.all([
+          db.from('bills').select('*').eq('is_active', true).order('due_day'),
+          db.from('bill_payments').select('*').eq('month_year', my),
+        ]);
+        setBills(b || []);
+        setPayments(p || []);
+      }, [my]);
+
+      // Auto-seed sample data if table is empty
+      const maybeSeed = useCallback(async () => {
+        const { data } = await db.from('bills').select('id').limit(1);
+        if (!data || data.length === 0) {
+          await db.from('bills').insert(SAMPLE_BILLS.map(b => ({ ...b, is_active: true })));
+        }
+        setSeeded(true);
+      }, []);
+
+      useEffect(() => { maybeSeed(); }, []);
+      useEffect(() => { if (seeded) fetchAll(); }, [seeded, fetchAll]);
+
+      const paidIds = new Set(payments.map(p => p.bill_id));
+      const totalOut = bills.reduce((s, b) => s + parseFloat(b.amount || 0), 0);
+      const paidAmt = payments.reduce((s, p) => s + parseFloat(p.amount_paid || 0), 0);
+      const remaining = totalOut - paidAmt;
+      const paidCount = bills.filter(b => paidIds.has(b.id)).length;
+
+      const openAdd = () => {
+        setForm({ name: '', amount: '', due_day: '', category: 'bill' });
+        setEditing(null);
+        setShowAdd(true);
+      };
+
+      const openEdit = bill => {
+        setForm({ name: bill.name, amount: String(bill.amount), due_day: String(bill.due_day), category: bill.category || 'bill' });
+        setEditing(bill);
+        setShowAdd(true);
+      };
+
+      const saveBill = async () => {
+        if (!form.name.trim() || !form.amount || !form.due_day) return;
+        const payload = {
+          name: form.name.trim(),
+          amount: parseFloat(form.amount),
+          due_day: parseInt(form.due_day),
+          category: form.category,
+        };
+        if (editing) {
+          await db.from('bills').update(payload).eq('id', editing.id);
+        } else {
+          await db.from('bills').insert({ ...payload, is_active: true });
+        }
+        setShowAdd(false);
+        setEditing(null);
+        fetchAll();
+      };
+
+      const deleteBill = async id => {
+        await db.from('bills').update({ is_active: false }).eq('id', id);
+        setDeleteConfirm(null);
+        fetchAll();
+      };
+
+      const markPaid = async bill => {
+        if (paidIds.has(bill.id)) {
+          await db.from('bill_payments').delete().eq('bill_id', bill.id).eq('month_year', my);
+        } else {
+          await db.from('bill_payments').insert({
+            bill_id: bill.id,
+            paid_date: todayStr(),
+            amount_paid: bill.amount,
+            month_year: my,
+          });
+        }
+        fetchAll();
+      };
+
+      const catStyle = cat => CAT_STYLE[cat] || CAT_STYLE.other;
+
+      return (
+        <div className="tab-content safe-bottom">
+          {/* Header */}
+          <div className="px-4 pt-14 pb-4">
+            <h2 className="text-2xl font-bold">Bills & Direct Debits</h2>
+            <p className="text-sm mt-0.5" style={{ color: '#8e8e93' }}>{monthName}</p>
+          </div>
+
+          {/* Summary Card */}
+          <div className="mx-4 rounded-2xl p-4 mb-4" style={{ background: '#1c1c1e' }}>
+            <div className="grid grid-cols-3 gap-1 text-center mb-3">
+              <div>
+                <p className="text-xl font-bold">{fmtGBP(totalOut)}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#8e8e93' }}>Total going out</p>
+              </div>
+              <div>
+                <p className="text-xl font-bold" style={{ color: '#10b981' }}>{fmtGBP(paidAmt)}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#8e8e93' }}>Paid</p>
+              </div>
+              <div>
+                <p className="text-xl font-bold" style={{ color: remaining > 0 ? '#f59e0b' : '#6b7280' }}>{fmtGBP(remaining)}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#8e8e93' }}>Remaining</p>
+              </div>
+            </div>
+            <div className="h-2 rounded-full mb-1.5" style={{ background: '#2c2c2e' }}>
+              <div className="h-2 rounded-full transition-all" style={{ background: '#10b981', width: totalOut > 0 ? `${Math.min((paidAmt / totalOut) * 100, 100)}%` : '0%' }} />
+            </div>
+            <p className="text-center text-xs" style={{ color: '#6b7280' }}>{paidCount} of {bills.length} bills paid</p>
+          </div>
+
+          {/* Bills list */}
+          <div className="px-4">
+            {bills.length === 0 && seeded ? (
+              <div className="text-center py-16">
+                <p className="text-5xl mb-4">💳</p>
+                <p className="font-semibold text-lg mb-2">No bills yet</p>
+                <p className="text-sm mb-6" style={{ color: '#6b7280' }}>Add your first bill to start tracking</p>
+                <button onClick={openAdd} className="px-6 py-3 rounded-xl font-semibold" style={{ background: '#10b981', color: '#fff' }}>
+                  + Add First Bill
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {bills.map(bill => {
+                  const isPaid = paidIds.has(bill.id);
+                  const isToday2 = bill.due_day === currentDay;
+                  const isOverdue = bill.due_day < currentDay && !isPaid;
+                  const isDueSoon = bill.due_day > currentDay && bill.due_day <= currentDay + 7 && !isPaid;
+                  const cs = catStyle(bill.category);
+
+                  return (
+                    <div
+                      key={bill.id}
+                      className="rounded-2xl p-4 transition-all"
+                      style={{
+                        background: isPaid ? '#111' : '#1c1c1e',
+                        border: `1px solid ${isOverdue ? '#7f1d1d' : isToday2 && !isPaid ? '#78350f' : '#2c2c2e'}`,
+                        opacity: isPaid ? 0.65 : 1,
+                      }}
+                    >
+                      {/* Top row */}
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                            <p className={`font-semibold ${isPaid ? 'line-through' : ''}`} style={{ color: isPaid ? '#6b7280' : '#fff' }}>
+                              {bill.name}
+                            </p>
+                            {isOverdue && !isPaid && (
+                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#7f1d1d', color: '#fca5a5' }}>Overdue</span>
+                            )}
+                            {isToday2 && !isPaid && (
+                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#78350f', color: '#fcd34d' }}>Due today</span>
+                            )}
+                            {isDueSoon && (
+                              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: '#1c1917', color: '#d6d3d1' }}>Due {ordinal(bill.due_day)}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className="text-xs px-2 py-0.5 rounded-full font-medium"
+                              style={{ background: cs.bg, color: cs.text, border: `1px solid ${cs.border}` }}
+                            >
+                              {bill.category}
+                            </span>
+                            {!isDueSoon && !isToday2 && !isOverdue && (
+                              <span className="text-xs" style={{ color: '#6b7280' }}>due {ordinal(bill.due_day)}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="text-xl font-bold">{fmtGBP(bill.amount)}</p>
+                          <p className="text-xs" style={{ color: '#6b7280' }}>/month</p>
+                        </div>
+                      </div>
+
+                      {/* Action row */}
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => markPaid(bill)}
+                          className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-95"
+                          style={{
+                            background: isPaid ? '#052e16' : '#10b981',
+                            color: isPaid ? '#6ee7b7' : '#fff',
+                            border: isPaid ? '1px solid #059669' : 'none',
+                          }}
+                        >
+                          {isPaid ? '✓ Paid' : 'Mark Paid'}
+                        </button>
+                        <button
+                          onClick={() => openEdit(bill)}
+                          className="px-3.5 py-2.5 rounded-xl text-sm transition-all active:scale-95"
+                          style={{ background: '#2c2c2e', color: '#9ca3af' }}
+                        >✏️</button>
+                        <button
+                          onClick={() => setDeleteConfirm(bill.id)}
+                          className="px-3.5 py-2.5 rounded-xl text-sm transition-all active:scale-95"
+                          style={{ background: '#2c2c2e', color: '#9ca3af' }}
+                        >🗑️</button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Add button */}
+                <button
+                  onClick={openAdd}
+                  className="w-full py-4 rounded-2xl text-sm font-semibold transition-all active:scale-98"
+                  style={{ border: '1px dashed #374151', color: '#10b981' }}
+                >
+                  + Add Bill or Direct Debit
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Add / Edit modal */}
+          {showAdd && (
+            <Modal title={editing ? 'Edit Bill' : 'Add Bill'} onClose={() => { setShowAdd(false); setEditing(null); }}>
+              <div className="space-y-4 pb-2">
+                <Field label="Bill / Direct Debit name">
+                  <input
+                    value={form.name}
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="e.g. Virgin Media, Mortgage…"
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Amount (£)">
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={form.amount}
+                      onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                      placeholder="0.00"
+                      className={inputCls}
+                      style={inputStyle}
+                    />
+                  </Field>
+                  <Field label="Day of month due">
+                    <input
+                      type="number" min="1" max="31"
+                      value={form.due_day}
+                      onChange={e => setForm(f => ({ ...f, due_day: e.target.value }))}
+                      placeholder="1–31"
+                      className={inputCls}
+                      style={inputStyle}
+                    />
+                  </Field>
+                </div>
+                <Field label="Category">
+                  <select
+                    value={form.category}
+                    onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                    className={inputCls}
+                    style={inputStyle}
+                  >
+                    {CATEGORIES.map(c => (
+                      <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                    ))}
+                  </select>
+                </Field>
+                <button
+                  onClick={saveBill}
+                  className="w-full py-3.5 rounded-xl font-semibold mt-2 transition-all active:scale-98"
+                  style={{ background: '#10b981', color: '#fff' }}
+                >
+                  {editing ? 'Save Changes' : 'Add Bill'}
+                </button>
+              </div>
+            </Modal>
+          )}
+
+          {/* Delete confirm */}
+          {deleteConfirm && (
+            <Modal title="Delete Bill?" onClose={() => setDeleteConfirm(null)}>
+              <p className="text-sm mb-5" style={{ color: '#9ca3af' }}>
+                This will remove the bill and all payment history for it. This cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteConfirm(null)}
+                  className="flex-1 py-3 rounded-xl font-semibold"
+                  style={{ background: '#2c2c2e', color: '#fff' }}
+                >Cancel</button>
+                <button
+                  onClick={() => deleteBill(deleteConfirm)}
+                  className="flex-1 py-3 rounded-xl font-semibold"
+                  style={{ background: '#dc2626', color: '#fff' }}
+                >Delete</button>
+              </div>
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Tasks Tab ────────────────────────────────────────────────────
+    function TasksTab({ user, allUsers }) {
+      const [tasks, setTasks] = useState([]);
+      const [showAdd, setShowAdd] = useState(false);
+      const [form, setForm] = useState({ title: '', assigned_to: '', due_date: '', recurrence: '' });
+      const [filter, setFilter] = useState('all'); // all | mine
+
+      const fetchTasks = () => {
+        db.from('family_tasks').select('*').order('due_date', { ascending: true, nullsFirst: false }).order('created_at')
+          .then(({ data }) => setTasks(data || []));
+      };
+
+      useEffect(() => { fetchTasks(); }, []);
+
+      const toggle = async task => {
+        await db.from('family_tasks').update({ completed: !task.completed, last_done: todayStr() }).eq('id', task.id);
+        fetchTasks();
+      };
+
+      const addTask = async () => {
+        if (!form.title.trim()) return;
+        await db.from('family_tasks').insert({
+          title: form.title.trim(),
+          assigned_to: form.assigned_to || null,
+          due_date: form.due_date || null,
+          recurrence: form.recurrence || null,
+          completed: false,
+        });
+        setForm({ title: '', assigned_to: '', due_date: '', recurrence: '' });
+        setShowAdd(false);
+        fetchTasks();
+      };
+
+      const deleteTask = async id => {
+        await db.from('family_tasks').delete().eq('id', id);
+        fetchTasks();
+      };
+
+      const getUserName = id => allUsers.find(u => u.id === id)?.name || '';
+
+      let displayed = filter === 'mine'
+        ? tasks.filter(t => t.assigned_to === user.id || !t.assigned_to)
+        : tasks;
+
+      const pending = displayed.filter(t => !t.completed);
+      const done = displayed.filter(t => t.completed);
+      const today2 = todayStr();
+
+      const TaskRow = ({ task }) => {
+        const assignee = getUserName(task.assigned_to);
+        const isOverdue = task.due_date && task.due_date < today2 && !task.completed;
+        return (
+          <div
+            className="rounded-2xl px-4 py-3 flex items-start gap-3 transition-all"
+            style={{ background: '#1c1c1e', opacity: task.completed ? 0.55 : 1 }}
+          >
+            <button onClick={() => toggle(task)} className="mt-0.5 flex-shrink-0">
+              <div
+                className="w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all"
+                style={{ background: task.completed ? '#10b981' : 'transparent', borderColor: task.completed ? '#10b981' : '#4b5563' }}
+              >
+                {task.completed && <span className="text-xs text-white font-bold">✓</span>}
+              </div>
+            </button>
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-medium leading-snug ${task.completed ? 'line-through' : ''}`} style={{ color: task.completed ? '#6b7280' : '#fff' }}>
+                {task.title}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 mt-1">
+                {assignee && <span className="text-xs" style={{ color: '#10b981' }}>👤 {assignee}</span>}
+                {task.due_date && (
+                  <span className="text-xs" style={{ color: isOverdue ? '#ef4444' : '#6b7280' }}>
+                    📅 {new Date(task.due_date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    {isOverdue && ' · overdue'}
+                  </span>
+                )}
+                {task.recurrence && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-full" style={{ background: '#2e1065', color: '#c4b5fd' }}>🔁 {task.recurrence}</span>
+                )}
+              </div>
+            </div>
+            <button onClick={() => deleteTask(task.id)} className="text-xs mt-0.5 px-1" style={{ color: '#4b5563' }}>✕</button>
+          </div>
+        );
+      };
+
+      return (
+        <div className="tab-content safe-bottom">
+          <div className="px-4 pt-14 pb-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-bold">Tasks</h2>
+                <p className="text-sm mt-0.5" style={{ color: '#8e8e93' }}>{pending.length} pending</p>
+              </div>
+              <button
+                onClick={() => { setForm({ title: '', assigned_to: '', due_date: '', recurrence: '' }); setShowAdd(true); }}
+                className="px-4 py-2 rounded-xl text-sm font-semibold"
+                style={{ background: '#10b981', color: '#fff' }}
+              >+ Add</button>
+            </div>
+
+            {/* Filter tabs */}
+            <div className="flex gap-2 mt-3">
+              {[['all', 'All'], ['mine', 'Mine']].map(([val, label]) => (
+                <button
+                  key={val}
+                  onClick={() => setFilter(val)}
+                  className="px-4 py-1.5 rounded-xl text-sm font-medium transition-all"
+                  style={{ background: filter === val ? '#10b981' : '#2c2c2e', color: filter === val ? '#fff' : '#9ca3af' }}
+                >{label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="px-4">
+            {tasks.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-5xl mb-4">✅</p>
+                <p className="font-semibold text-lg mb-2">No tasks yet</p>
+                <p className="text-sm mb-6" style={{ color: '#6b7280' }}>Add tasks to stay organised as a family</p>
+              </div>
+            ) : (
+              <>
+                {pending.length > 0 && (
+                  <div className="space-y-2 mb-4">
+                    {pending.map(t => <TaskRow key={t.id} task={t} />)}
+                  </div>
+                )}
+                {done.length > 0 && (
+                  <>
+                    <p className="text-xs font-medium mb-2" style={{ color: '#6b7280' }}>COMPLETED ({done.length})</p>
+                    <div className="space-y-2">
+                      {done.slice(0, 8).map(t => <TaskRow key={t.id} task={t} />)}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+
+          {showAdd && (
+            <Modal title="Add Task" onClose={() => setShowAdd(false)}>
+              <div className="space-y-4 pb-2">
+                <Field label="What needs doing?">
+                  <input
+                    value={form.title}
+                    onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                    placeholder="Task title…"
+                    className={inputCls}
+                    style={inputStyle}
+                  />
+                </Field>
+                <Field label="Assign to">
+                  <select value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))} className={inputCls} style={inputStyle}>
+                    <option value="">Anyone</option>
+                    {allUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Due date">
+                    <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} className={inputCls} style={inputStyle} />
+                  </Field>
+                  <Field label="Repeats">
+                    <select value={form.recurrence} onChange={e => setForm(f => ({ ...f, recurrence: e.target.value }))} className={inputCls} style={inputStyle}>
+                      <option value="">One-time</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </Field>
+                </div>
+                <button onClick={addTask} className="w-full py-3.5 rounded-xl font-semibold transition-all active:scale-98" style={{ background: '#10b981', color: '#fff' }}>
+                  Add Task
+                </button>
+              </div>
+            </Modal>
+          )}
+        </div>
+      );
+    }
+
+    // ─── Shopping Tab ─────────────────────────────────────────────────
+    function ShoppingTab({ user, allUsers }) {
+      const [items, setItems] = useState([]);
+      const [newItem, setNewItem] = useState('');
+      const inputRef = useRef(null);
+
+      const fetchItems = () => {
+        db.from('shopping_items').select('*').order('completed').order('created_at')
+          .then(({ data }) => setItems(data || []));
+      };
+
+      useEffect(() => { fetchItems(); }, []);
+
+      const addItem = async () => {
+        const name = newItem.trim();
+        if (!name) return;
+        setNewItem('');
+        await db.from('shopping_items').insert({ name, added_by: user.id, completed: false });
+        fetchItems();
+      };
+
+      const toggle = async item => {
+        await db.from('shopping_items').update({ completed: !item.completed }).eq('id', item.id);
+        fetchItems();
+      };
+
+      const deleteItem = async id => {
+        await db.from('shopping_items').delete().eq('id', id);
+        fetchItems();
+      };
+
+      const clearDone = async () => {
+        const ids = items.filter(i => i.completed).map(i => i.id);
+        if (ids.length) await db.from('shopping_items').delete().in('id', ids);
+        fetchItems();
+      };
+
+      const getUserName = id => allUsers.find(u => u.id === id)?.name || '';
+      const pending = items.filter(i => !i.completed);
+      const done = items.filter(i => i.completed);
+
+      return (
+        <div className="tab-content safe-bottom">
+          <div className="px-4 pt-14 pb-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <h2 className="text-2xl font-bold">Shopping List</h2>
+                <p className="text-sm mt-0.5" style={{ color: '#8e8e93' }}>{pending.length} items needed</p>
+              </div>
+              {done.length > 0 && (
+                <button onClick={clearDone} className="text-sm font-medium" style={{ color: '#ef4444' }}>
+                  Clear {done.length} done
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Add input */}
+          <div className="px-4 mb-4">
+            <div className="flex gap-2">
+              <input
+                ref={inputRef}
+                value={newItem}
+                onChange={e => setNewItem(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addItem()}
+                placeholder="Add an item…"
+                className="flex-1 px-4 py-3 rounded-xl text-sm"
+                style={{ background: '#1c1c1e', color: '#fff', border: '1px solid #2c2c2e' }}
+              />
+              <button
+                onClick={addItem}
+                className="px-5 py-3 rounded-xl font-bold text-lg transition-all active:scale-95"
+                style={{ background: '#10b981', color: '#fff' }}
+              >+</button>
+            </div>
+          </div>
+
+          <div className="px-4">
+            {items.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-5xl mb-4">🛒</p>
+                <p className="font-semibold text-lg mb-2">List is empty</p>
+                <p className="text-sm" style={{ color: '#6b7280' }}>Type above to add items</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {pending.map(item => (
+                  <div key={item.id} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: '#1c1c1e' }}>
+                    <button onClick={() => toggle(item)}>
+                      <div className="w-6 h-6 rounded-full border-2 flex-shrink-0 transition-all" style={{ borderColor: '#4b5563' }} />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm">{item.name}</p>
+                      {item.added_by && (
+                        <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>
+                          Added by {getUserName(item.added_by)}
+                        </p>
+                      )}
+                    </div>
+                    <button onClick={() => deleteItem(item.id)} className="text-xs px-1 flex-shrink-0" style={{ color: '#4b5563' }}>✕</button>
+                  </div>
+                ))}
+
+                {done.length > 0 && (
+                  <>
+                    <p className="text-xs font-medium pt-1 pb-0.5" style={{ color: '#6b7280' }}>IN BASKET ({done.length})</p>
+                    {done.map(item => (
+                      <div key={item.id} className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: '#111', opacity: 0.6 }}>
+                        <button onClick={() => toggle(item)}>
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: '#10b981' }}>
+                            <span className="text-xs text-white font-bold">✓</span>
+                          </div>
+                        </button>
+                        <p className="flex-1 text-sm line-through" style={{ color: '#6b7280' }}>{item.name}</p>
+                        <button onClick={() => deleteItem(item.id)} className="text-xs px-1" style={{ color: '#4b5563' }}>✕</button>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Bottom Nav ───────────────────────────────────────────────────
+    function BottomNav({ active, onChange }) {
+      const tabs = [
+        { id: 'home',     icon: '🏠', label: 'Home'     },
+        { id: 'prayers',  icon: '🕌', label: 'Prayers'  },
+        { id: 'bills',    icon: '💳', label: 'Bills'    },
+        { id: 'tasks',    icon: '✅', label: 'Tasks'    },
+        { id: 'shopping', icon: '🛒', label: 'Shopping' },
+      ];
+
+      return (
+        <nav
+          className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch"
+          style={{
+            background: '#111',
+            borderTop: '1px solid #2c2c2e',
+            paddingBottom: 'env(safe-area-inset-bottom)',
+          }}
+        >
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => onChange(tab.id)}
+              className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all"
+            >
+              <span className="text-xl leading-none">{tab.icon}</span>
+              <span
+                className="text-xs font-medium leading-none"
+                style={{ color: active === tab.id ? '#10b981' : '#6b7280' }}
+              >{tab.label}</span>
+              {active === tab.id && (
+                <div className="w-4 h-0.5 rounded-full" style={{ background: '#10b981' }} />
+              )}
+            </button>
+          ))}
+        </nav>
+      );
+    }
+
+    // ─── App Root ─────────────────────────────────────────────────────
+    function App() {
+      const [user, setUser] = useState(null);
+      const [allUsers, setAllUsers] = useState([]);
+      const [tab, setTab] = useState('home');
+
+      useEffect(() => {
+        if (user) {
+          db.from('family_users').select('*').then(({ data }) => setAllUsers(data || []));
+        }
+      }, [user?.id]);
+
+      const logout = () => { setUser(null); setTab('home'); };
+
+      if (!user) return <LoginScreen onLogin={u => setUser(u)} />;
+
+      return (
+        <div style={{ background: '#0f0f0f', minHeight: '100vh' }}>
+          {/* User avatar / logout */}
+          <div className="fixed top-0 right-0 z-50 px-4 pt-safe-top" style={{ paddingTop: 'max(16px, env(safe-area-inset-top))' }}>
+            <button
+              onClick={logout}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shadow-lg"
+              style={{ background: '#10b981', color: '#fff' }}
+              title={`${user.name} — tap to log out`}
+            >
+              {user.name[0]}
+            </button>
+          </div>
+
+          {/* Tabs */}
+          {tab === 'home'     && <HomeTab     user={user} switchTab={setTab} />}
+          {tab === 'prayers'  && <PrayersTab  user={user} />}
+          {tab === 'bills'    && <BillsTab    user={user} />}
+          {tab === 'tasks'    && <TasksTab    user={user} allUsers={allUsers} />}
+          {tab === 'shopping' && <ShoppingTab user={user} allUsers={allUsers} />}
+
+          <BottomNav active={tab} onChange={setTab} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
