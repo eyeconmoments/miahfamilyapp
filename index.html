@@ -470,7 +470,7 @@
                 <p className="text-xs mt-0.5" style={{ color: '#8e8e93' }}>tasks pending</p>
               </button>
               <button
-                onClick={() => switchTab('shopping')}
+                onClick={() => switchTab('tasks')}
                 className="rounded-2xl p-4 text-left active:opacity-80"
                 style={{ background: '#1c1c1e' }}
               >
@@ -507,7 +507,7 @@
     }
 
     // ─── Prayers Tab ──────────────────────────────────────────────────
-    function PrayersTab({ user, allUsers }) {
+    function PrayersTab({ user, allUsers, noPadTop }) {
       const [date, setDate] = useState(todayStr());
       const [logs, setLogs] = useState([]);
       const [busy, setBusy] = useState({});
@@ -606,7 +606,7 @@
 
       return (
         <div className="tab-content safe-bottom">
-          <div className="px-4 pt-14 pb-3">
+          <div className={`px-4 pb-3 ${noPadTop ? 'pt-3' : 'pt-14'}`}>
             <div className="flex justify-between items-start">
               <div>
                 <h2 className="text-2xl font-bold">Prayers</h2>
@@ -1058,7 +1058,7 @@
     }
 
     // ─── Tasks Tab ────────────────────────────────────────────────────
-    function TasksTab({ user, allUsers }) {
+    function TasksTab({ user, allUsers, noPadTop }) {
       const [tasks, setTasks] = useState([]);
       const [showAdd, setShowAdd] = useState(false);
       const [form, setForm] = useState({ title: '', assigned_to: '', due_date: '', recurrence: '' });
@@ -1145,7 +1145,7 @@
 
       return (
         <div className="tab-content safe-bottom">
-          <div className="px-4 pt-14 pb-3">
+          <div className={`px-4 pb-3 ${noPadTop ? 'pt-3' : 'pt-14'}`}>
             <div className="flex justify-between items-start">
               <div>
                 <h2 className="text-2xl font-bold">Tasks</h2>
@@ -1239,7 +1239,7 @@
     }
 
     // ─── Shopping Tab ─────────────────────────────────────────────────
-    function ShoppingTab({ user, allUsers }) {
+    function ShoppingTab({ user, allUsers, noPadTop }) {
       const [items, setItems] = useState([]);
       const [newItem, setNewItem] = useState('');
       const inputRef = useRef(null);
@@ -1281,7 +1281,7 @@
 
       return (
         <div className="tab-content safe-bottom">
-          <div className="px-4 pt-14 pb-3">
+          <div className={`px-4 pb-3 ${noPadTop ? 'pt-3' : 'pt-14'}`}>
             <div className="flex justify-between items-start">
               <div>
                 <h2 className="text-2xl font-bold">Shopping List</h2>
@@ -1381,8 +1381,8 @@
       UNIQUE(user_id, date)
     );
     */
-    function WellnessTab({ user }) {
-      const [innerTab, setInnerTab] = useState('gym');
+    function WellnessTab({ user, initialTab }) {
+      const [innerTab, setInnerTab] = useState(initialTab || 'gym');
       const [gymLogs, setGymLogs] = useState([]);
       const [stepLogs, setStepLogs] = useState([]);
       const [stepInput, setStepInput] = useState('');
@@ -1513,22 +1513,7 @@
 
       return (
         <div className="tab-content safe-bottom">
-          <div className="px-4 pt-14 pb-3">
-            <h2 className="text-2xl font-bold">Wellness</h2>
-          </div>
-
-          {/* Inner tab switcher */}
-          <div className="px-4 mb-4">
-            <div className="flex rounded-2xl p-1 gap-1" style={{ background: '#1c1c1e' }}>
-              {[{ k: 'gym', icon: '💪', l: 'Gym' }, { k: 'steps', icon: '👟', l: 'Steps' }].map(t => (
-                <button key={t.k} onClick={() => setInnerTab(t.k)}
-                  className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
-                  style={{ background: innerTab === t.k ? '#059669' : 'transparent', color: innerTab === t.k ? '#fff' : '#6b7280' }}>
-                  {t.icon} {t.l}
-                </button>
-              ))}
-            </div>
-          </div>
+          <div className="px-4 pt-4 pb-1" />
 
           {/* ── GYM ── */}
           {innerTab === 'gym' && (
@@ -1679,42 +1664,107 @@
       );
     }
 
+    // ─── Prayers + Wellness wrapper ───────────────────────────────────
+    function PrayersWellnessTab({ user, allUsers }) {
+      const [sub, setSub] = useState('prayers');
+      const subTabs = [
+        { id: 'prayers', icon: '🕌', label: 'Prayers' },
+        { id: 'gym',     icon: '💪', label: 'Gym'     },
+        { id: 'steps',   icon: '👟', label: 'Steps'   },
+      ];
+      return (
+        <div style={{ background: '#0f0f0f', minHeight: '100vh' }}>
+          {/* Sub-tab bar */}
+          <div className="fixed top-0 left-0 right-0 z-30 px-4"
+            style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', background: 'rgba(15,15,15,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid #1c1c1e', paddingBottom: 10 }}>
+            <div className="flex gap-2">
+              {subTabs.map(t => (
+                <button key={t.id} onClick={() => setSub(t.id)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
+                  style={{ background: sub === t.id ? '#10b981' : '#1c1c1e', color: sub === t.id ? '#fff' : '#6b7280' }}>
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ paddingTop: 70 }}>
+            {sub === 'prayers' && <PrayersTab user={user} allUsers={allUsers} noPadTop />}
+            {sub !== 'prayers' && <WellnessTab user={user} initialTab={sub} />}
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Tasks + Shopping wrapper ──────────────────────────────────────
+    function TasksShoppingTab({ user, allUsers }) {
+      const [sub, setSub] = useState('tasks');
+      return (
+        <div style={{ background: '#0f0f0f', minHeight: '100vh' }}>
+          {/* Sub-tab bar */}
+          <div className="fixed top-0 left-0 right-0 z-30 px-4"
+            style={{ paddingTop: 'max(14px, env(safe-area-inset-top))', background: 'rgba(15,15,15,0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid #1c1c1e', paddingBottom: 10 }}>
+            <div className="flex gap-2">
+              {[{ id:'tasks', icon:'✅', label:'Tasks' }, { id:'shopping', icon:'🛒', label:'Shopping' }].map(t => (
+                <button key={t.id} onClick={() => setSub(t.id)}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
+                  style={{ background: sub === t.id ? '#10b981' : '#1c1c1e', color: sub === t.id ? '#fff' : '#6b7280' }}>
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ paddingTop: 70 }}>
+            {sub === 'tasks'    && <TasksTab    user={user} allUsers={allUsers} noPadTop />}
+            {sub === 'shopping' && <ShoppingTab user={user} allUsers={allUsers} noPadTop />}
+          </div>
+        </div>
+      );
+    }
+
     // ─── Bottom Nav ───────────────────────────────────────────────────
     function BottomNav({ active, onChange }) {
       const tabs = [
-        { id: 'home',     icon: '🏠', label: 'Home'     },
-        { id: 'prayers',  icon: '🕌', label: 'Prayers'  },
-        { id: 'wellness', icon: '💪', label: 'Wellness' },
-        { id: 'bills',    icon: '💳', label: 'Bills'    },
-        { id: 'tasks',    icon: '✅', label: 'Tasks'    },
-        { id: 'shopping', icon: '🛒', label: 'Shopping' },
+        { id: 'home',    icon: '🏠', label: 'Home'    },
+        { id: 'prayers', icon: '🕌', label: 'Prayers' },
+        { id: 'bills',   icon: '💳', label: 'Bills'   },
+        { id: 'tasks',   icon: '✅', label: 'Tasks'   },
       ];
 
       return (
         <nav
-          className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch"
+          className="fixed bottom-0 left-0 right-0 z-40"
           style={{
-            background: '#111',
-            borderTop: '1px solid #2c2c2e',
+            background: 'rgba(15,15,15,0.96)',
+            backdropFilter: 'blur(20px)',
+            borderTop: '1px solid #1c1c1e',
             paddingBottom: 'env(safe-area-inset-bottom)',
           }}
         >
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => onChange(tab.id)}
-              className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-all"
-            >
-              <span className="text-xl leading-none">{tab.icon}</span>
-              <span
-                className="text-xs font-medium leading-none"
-                style={{ color: active === tab.id ? '#10b981' : '#6b7280' }}
-              >{tab.label}</span>
-              {active === tab.id && (
-                <div className="w-4 h-0.5 rounded-full" style={{ background: '#10b981' }} />
-              )}
-            </button>
-          ))}
+          <div className="flex items-stretch">
+            {tabs.map(tab => {
+              const isActive = active === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => onChange(tab.id)}
+                  className="flex-1 flex flex-col items-center justify-center gap-1 py-3 relative transition-all"
+                  style={{ WebkitTapHighlightColor: 'transparent' }}
+                >
+                  {isActive && (
+                    <div className="absolute top-1.5 left-1/2 -translate-x-1/2 h-1 rounded-full"
+                      style={{ background: '#10b981', width: 28 }} />
+                  )}
+                  <span className="text-2xl leading-none" style={{ filter: isActive ? 'none' : 'grayscale(1) opacity(0.4)' }}>
+                    {tab.icon}
+                  </span>
+                  <span className="text-xs font-semibold leading-none"
+                    style={{ color: isActive ? '#10b981' : '#4b5563' }}>
+                    {tab.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </nav>
       );
     }
@@ -1750,12 +1800,10 @@
           </div>
 
           {/* Tabs */}
-          {tab === 'home'     && <HomeTab     user={user} switchTab={setTab} />}
-          {tab === 'prayers'  && <PrayersTab  user={user} allUsers={allUsers} />}
-          {tab === 'wellness' && <WellnessTab user={user} />}
-          {tab === 'bills'    && <BillsTab    user={user} />}
-          {tab === 'tasks'    && <TasksTab    user={user} allUsers={allUsers} />}
-          {tab === 'shopping' && <ShoppingTab user={user} allUsers={allUsers} />}
+          {tab === 'home'    && <HomeTab    user={user} switchTab={setTab} />}
+          {tab === 'prayers' && <PrayersWellnessTab user={user} allUsers={allUsers} />}
+          {tab === 'bills'   && <BillsTab   user={user} />}
+          {tab === 'tasks'   && <TasksShoppingTab user={user} allUsers={allUsers} />}
 
           <BottomNav active={tab} onChange={setTab} />
         </div>
