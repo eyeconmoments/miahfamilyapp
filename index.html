@@ -165,6 +165,31 @@
       { name: 'Netflix',        amount: 10.99,   due_day: 25, category: 'subscription'  },
     ];
 
+    // ─── Prayer notification scheduling ────────────────────────────
+    const schedulePrayerAlerts = (times) => {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      const now = new Date();
+      const nowMs = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000;
+      PRAYER_KEYS.forEach(key => {
+        const [h, m] = times[key].split(':').map(Number);
+        const pMs = h * 3600000 + m * 60000;
+        const diff = pMs - nowMs;
+        if (diff > 90000) { // more than 90 seconds away
+          setTimeout(() => {
+            if (Notification.permission === 'granted') {
+              try {
+                new Notification(PRAYER_ICONS[key] + ' ' + PRAYER_LABELS[key] + ' time', {
+                  body: 'It is ' + times[key] + ' — time for ' + PRAYER_LABELS[key] + '. Allahu Akbar.',
+                  tag: 'salah-' + key,
+                  silent: false,
+                });
+              } catch(e) {}
+            }
+          }, diff);
+        }
+      });
+    };
+
     // ─── Modal ───────────────────────────────────────────────────────
     function Modal({ title, onClose, children }) {
       return (
@@ -602,6 +627,7 @@
       const [busy, setBusy] = useState({});
       const [historyLogs, setHistoryLogs] = useState([]); // last 30 days for streak
       const [allTodayLogs, setAllTodayLogs] = useState([]); // all users today
+      const [notifOn, setNotifOn] = useState(() => localStorage.getItem('salahNotif') === 'true' && Notification.permission === 'granted');
 
       const prayerTimes = useMemo(() => getPrayerTimes(new Date(date + 'T12:00:00')), [date]);
 
@@ -710,6 +736,28 @@
                     🔥 {streak}d
                   </div>
                 )}
+                <button
+                  onClick={async () => {
+                    if (notifOn) {
+                      localStorage.removeItem('salahNotif');
+                      setNotifOn(false);
+                    } else {
+                      const perm = await Notification.requestPermission();
+                      if (perm === 'granted') {
+                        localStorage.setItem('salahNotif', 'true');
+                        setNotifOn(true);
+                        schedulePrayerAlerts(getPrayerTimes(new Date()));
+                      } else {
+                        alert('Notification permission denied. Enable it in your browser settings.');
+                      }
+                    }
+                  }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-lg transition-all active:scale-90"
+                  style={{ background: notifOn ? '#059669' : '#2c2c2e', border: notifOn ? '1px solid #10b981' : '1px solid #3a3a3c' }}
+                  title={notifOn ? 'Prayer alerts ON – tap to disable' : 'Enable prayer alerts'}
+                >
+                  {notifOn ? '🔔' : '🔕'}
+                </button>
                 <input type="date" value={date} max={todayStr()} onChange={e => setDate(e.target.value)}
                   className="text-xs rounded-xl px-3 py-2"
                   style={{ background: '#2c2c2e', color: '#fff', border: '1px solid #3a3a3c' }} />
@@ -721,6 +769,39 @@
           <div className="px-4 mb-4">
             <div className="h-2 rounded-full" style={{ background: '#2c2c2e' }}>
               <div className="h-2 rounded-full transition-all duration-500" style={{ background: '#10b981', width: `${(done / 5) * 100}%` }} />
+            </div>
+          </div>
+
+          {/* Salah times strip */}
+          <div className="mx-4 mb-3 rounded-2xl overflow-hidden" style={{ background: '#1c1c1e', border: '1px solid #2c2c2e' }}>
+            <div className="flex">
+              {PRAYER_KEYS.map(key => {
+                const log = logs.find(l => l.prayer_name === key);
+                const isNext = key === nextKey;
+                const isDone = !!log;
+                const isKazaa = log?.status === 'kazaa';
+                return (
+                  <div key={key} className="flex-1 flex flex-col items-center py-3 px-0.5"
+                    style={{
+                      background: isNext ? '#0d2318' : 'transparent',
+                      borderTop: '2px solid ' + (isNext ? '#10b981' : isDone ? (isKazaa ? '#d97706' : '#059669') : 'transparent'),
+                    }}>
+                    <span style={{ fontSize: 13 }}>{PRAYER_ICONS[key]}</span>
+                    <p className="font-semibold mt-0.5" style={{ fontSize: 10, color: isNext ? '#10b981' : isDone ? (isKazaa ? '#fbbf24' : '#6ee7b7') : '#9ca3af' }}>
+                      {PRAYER_LABELS[key]}
+                    </p>
+                    <p style={{ fontSize: 11, fontWeight: 600, color: isNext ? '#34d399' : isDone ? (isKazaa ? '#d97706' : '#059669') : '#4b5563', marginTop: 1 }}>
+                      {prayerTimes[key]}
+                    </p>
+                    {isNext && !isDone && (
+                      <p style={{ fontSize: 8, letterSpacing: 0.5, color: '#10b981', marginTop: 2 }}>NEXT</p>
+                    )}
+                    {isDone && (
+                      <div style={{ width: 4, height: 4, borderRadius: '50%', background: isKazaa ? '#f59e0b' : '#10b981', marginTop: 3 }} />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -1909,6 +1990,10 @@
       useEffect(() => {
         if (user) {
           db.from('family_users').select('*').then(({ data }) => setAllUsers(data || []));
+          // Auto-schedule prayer notifications on login if previously enabled
+          if (localStorage.getItem('salahNotif') === 'true' && Notification.permission === 'granted') {
+            schedulePrayerAlerts(getPrayerTimes(new Date()));
+          }
         }
       }, [user?.id]);
 
