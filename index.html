@@ -480,6 +480,28 @@
                 );
               })}
             </div>
+
+            {/* Prayers missed/overdue today */}
+            {donePrayers < 5 && (() => {
+              const nowMins = now.getHours() * 60 + now.getMinutes();
+              const pastMissed = PRAYER_KEYS.filter(k => {
+                if (prayerLogs.some(l => l.prayer_name === k)) return false;
+                const [h, m] = prayerTimes[k].split(':').map(Number);
+                return (h * 60 + m) <= nowMins;
+              });
+              if (pastMissed.length === 0) return null;
+              return (
+                <button onClick={() => switchTab('prayers')}
+                  className="mt-3 w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl active:opacity-80"
+                  style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                  <span className="text-sm">⚠️</span>
+                  <p className="text-xs font-medium flex-1" style={{ color: '#fca5a5' }}>
+                    Missed: {pastMissed.map(k => PRAYER_LABELS[k]).join(' · ')}
+                  </p>
+                  <span className="text-xs" style={{ color: '#f87171' }}>Log now →</span>
+                </button>
+              );
+            })()}
           </div>
 
           {/* Dashboard cards */}
@@ -706,6 +728,48 @@
           <div className="px-4 mb-2">
             <p className="text-xs" style={{ color: '#4b5563' }}>Tap once = on time · Tap again = kazaa · Tap again = remove</p>
           </div>
+
+          {/* Catch-ups needed – past days with incomplete prayers */}
+          {isToday && (() => {
+            const catchUpDays = [];
+            for (let i = 1; i <= 7; i++) {
+              const d = new Date(); d.setDate(d.getDate() - i);
+              const ds = d.toISOString().slice(0, 10);
+              const dayLogs = historyLogs.filter(l => l.prayer_date === ds);
+              const missing = PRAYER_KEYS.filter(k => !dayLogs.some(l => l.prayer_name === k));
+              if (missing.length > 0) catchUpDays.push({ ds, missing, done: dayLogs.length });
+            }
+            if (catchUpDays.length === 0) return null;
+            return (
+              <div className="mx-4 mb-3 rounded-2xl p-4" style={{ background: '#1c1208', border: '1px solid #92400e' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold" style={{ color: '#f59e0b', letterSpacing: 1 }}>🔄 CATCH-UPS NEEDED</p>
+                  <p className="text-xs" style={{ color: '#78350f' }}>{catchUpDays.length} day{catchUpDays.length > 1 ? 's' : ''}</p>
+                </div>
+                <div className="space-y-2">
+                  {catchUpDays.slice(0, 4).map(({ ds, missing, done }) => {
+                    const label = new Date(ds + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+                    return (
+                      <button key={ds} onClick={() => setDate(ds)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl active:opacity-80"
+                        style={{ background: '#2a1600' }}>
+                        <div className="text-left">
+                          <p className="text-sm font-semibold">{label}</p>
+                          <p className="text-xs mt-0.5" style={{ color: '#fbbf24' }}>
+                            {missing.map(k => PRAYER_LABELS[k]).join(' · ')}
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0 ml-3">
+                          <p className="text-sm font-bold" style={{ color: done > 0 ? '#f59e0b' : '#6b7280' }}>{done}/5</p>
+                          <p className="text-xs" style={{ color: '#92400e' }}>log →</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Prayer buttons */}
           <div className="px-4 space-y-2.5">
