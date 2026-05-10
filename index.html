@@ -324,6 +324,7 @@
       const [payments, setPayments] = useState([]);
       const [tasks, setTasks] = useState([]);
       const [shopping, setShopping] = useState([]);
+      const [gymLogs, setGymLogs] = useState([]);
 
       useEffect(() => {
         const iv = setInterval(() => setNow(new Date()), 30000);
@@ -332,31 +333,36 @@
 
       useEffect(() => {
         const t = todayStr(), my = monthYearStr();
+        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+        const cutoffStr = cutoff.toISOString().slice(0, 10);
         Promise.all([
           db.from('prayer_log').select('*').eq('user_id', user.id).eq('prayer_date', t),
           db.from('bills').select('*').eq('is_active', true),
           db.from('bill_payments').select('*').eq('month_year', my),
           db.from('family_tasks').select('*').eq('completed', false),
           db.from('shopping_items').select('*').eq('completed', false),
-        ]).then(([pl, bl, bp, tk, sh]) => {
+          db.from('family_gym_logs').select('*').eq('user_id', user.id).gte('date', cutoffStr),
+        ]).then(([pl, bl, bp, tk, sh, gl]) => {
           setPrayerLogs(pl.data || []);
           setBills(bl.data || []);
           setPayments(bp.data || []);
           setTasks(tk.data || []);
           setShopping(sh.data || []);
+          setGymLogs(gl.data || []);
         });
       }, [user.id]);
 
       const prayerTimes = useMemo(() => getPrayerTimes(now), [now.toDateString()]);
       const donePrayers = prayerLogs.length;
+      const todayScore = prayerLogs.reduce((s, l) => s + (l.status === 'kazaa' ? 0.5 : 1), 0);
 
       const greeting = () => {
         const h = now.getHours();
-        if (h < 5)  return 'Assalamu Alaikum 🌙';
-        if (h < 12) return 'Good morning ☀️';
+        if (h < 5)  return 'Assalamu Alaikum \u{1F319}';
+        if (h < 12) return 'Good morning \u{2600}\uFE0F';
         if (h < 17) return 'Good afternoon 🌤️';
-        if (h < 20) return 'Good evening 🌅';
-        return 'Good night 🌃';
+        if (h < 20) return 'Good evening \u{1F305}';
+        return 'Good night \u{1F303}';
       };
 
       const nextPrayer = useMemo(() => {
@@ -369,12 +375,13 @@
             const hrs = Math.floor(diff / 60), mins = diff % 60;
             return {
               name: PRAYER_LABELS[key],
+              icon: PRAYER_ICONS[key],
               time: prayerTimes[key],
               in: hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`,
             };
           }
         }
-        return { name: 'Fajr', time: prayerTimes.fajr, in: 'Tomorrow' };
+        return { name: 'Fajr', icon: '\u{1F319}', time: prayerTimes.fajr, in: 'Tomorrow' };
       }, [now, prayerTimes]);
 
       const paidIds = new Set(payments.map(p => p.bill_id));
@@ -383,100 +390,153 @@
       const myTasks = tasks.filter(t => !t.assigned_to || t.assigned_to === user.id).slice(0, 3);
       const totalBills = bills.reduce((s, b) => s + parseFloat(b.amount || 0), 0);
       const paidAmt = payments.reduce((s, p) => s + parseFloat(p.amount_paid || 0), 0);
+      const remaining = totalBills - paidAmt;
+
+      // Gym this week
+      const getMon = ds => {
+        const d = new Date(ds + 'T12:00:00');
+        const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
+        d.setDate(d.getDate() + diff);
+        return d.toISOString().slice(0, 10);
+      };
+      const thisWeekMon = getMon(todayStr());
+      const thisWeekDays = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(thisWeekMon + 'T12:00:00'); d.setDate(d.getDate() + i);
+        return d.toISOString().slice(0, 10);
+      });
+      const wentGymThisWeek = thisWeekDays.some(ds => gymLogs.some(r => r.date === ds));
+
+      // SVG prayer ring constants
+      const R = 46;
+      const CIRC = 2 * Math.PI * R;
 
       return (
         <div className="tab-content safe-bottom">
-          <div className="px-4 pt-14 pb-2">
-            {/* Header */}
-            <p className="text-sm" style={{ color: '#8e8e93' }}>{greeting()}</p>
-            <h1 className="text-3xl font-bold mt-0.5">{user.name}</h1>
-            <p className="text-sm mt-1" style={{ color: '#6b7280' }}>
-              {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-            </p>
-          </div>
+          {/* Hero section with circular prayer ring */}
+          <div style={{ background: 'linear-gradient(170deg, #061510 0%, #0b1c12 45%, #0f0f0f 100%)' }} className="px-4 pt-16 pb-6">
+            <div className="flex items-start justify-between mb-5">
+              <div>
+                <p className="text-sm font-medium" style={{ color: '#6ee7b7' }}>{greeting()}</p>
+                <h1 className="text-3xl font-bold mt-0.5 tracking-tight">{user.name}</h1>
+                <p className="text-xs mt-1" style={{ color: '#4b5563' }}>
+                  {now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
+              {donePrayers === 5 && <span className="text-4xl mt-1">⭐</span>}
+            </div>
 
-          <div className="px-4 space-y-3 pt-3">
-            {/* Prayer card */}
-            <button
-              onClick={() => switchTab('prayers')}
-              className="w-full rounded-2xl p-4 text-left active:opacity-80 transition-opacity"
-              style={{ background: '#1c1c1e' }}
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <p className="text-xs font-medium mb-0.5" style={{ color: '#8e8e93' }}>TODAY'S PRAYERS</p>
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-bold" style={{ color: '#10b981' }}>{donePrayers}</span>
-                    <span className="text-xl font-light" style={{ color: '#4b5563' }}>/5</span>
+            {/* Ring + next prayer info */}
+            <div className="flex items-center gap-5">
+              <div className="relative flex-shrink-0" style={{ width: 116, height: 116 }}>
+                <svg viewBox="0 0 116 116" style={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}>
+                  <circle cx="58" cy="58" r={R} fill="none" stroke="#102018" strokeWidth="12"/>
+                  <circle cx="58" cy="58" r={R} fill="none"
+                    stroke={donePrayers === 5 ? '#10b981' : '#059669'}
+                    strokeWidth="12"
+                    strokeDasharray={CIRC}
+                    strokeDashoffset={CIRC - (donePrayers / 5) * CIRC}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="font-bold leading-none" style={{ fontSize: 28, color: '#10b981' }}>{donePrayers}</span>
+                  <span className="text-xs leading-none mt-1" style={{ color: '#4b5563' }}>of 5</span>
+                  {todayScore > 0 && (
+                    <span className="font-bold mt-1" style={{ fontSize: 11, color: '#6ee7b7' }}>{todayScore}pts</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold mb-2" style={{ color: '#374151', letterSpacing: 1 }}>NEXT PRAYER</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">{nextPrayer.icon}</span>
+                  <div>
+                    <p className="text-xl font-bold leading-tight">{nextPrayer.name}</p>
+                    <p className="text-sm font-medium" style={{ color: '#10b981' }}>{nextPrayer.time}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-medium mb-0.5" style={{ color: '#8e8e93' }}>NEXT PRAYER</p>
-                  <p className="text-sm font-semibold" style={{ color: '#10b981' }}>{nextPrayer.name}</p>
-                  <p className="text-xs" style={{ color: '#6b7280' }}>{nextPrayer.time} · {nextPrayer.in}</p>
+                <div className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold"
+                  style={{ background: '#102018', color: '#6ee7b7' }}>
+                  ⏱ in {nextPrayer.in}
                 </div>
               </div>
-              {/* Progress */}
-              <div className="h-1.5 rounded-full mb-2" style={{ background: '#2c2c2e' }}>
-                <div className="h-1.5 rounded-full transition-all duration-500" style={{ background: '#10b981', width: `${(donePrayers / 5) * 100}%` }} />
-              </div>
-              <div className="flex gap-1.5">
-                {PRAYER_KEYS.map(k => {
-                  const done = prayerLogs.some(l => l.prayer_name === k);
-                  return (
-                    <div key={k} className="flex-1 text-center">
-                      <div className="h-1 rounded-full mb-1" style={{ background: done ? '#10b981' : '#2c2c2e' }} />
-                      <span className="text-xs" style={{ color: done ? '#10b981' : '#4b5563', fontSize: 10 }}>{PRAYER_LABELS[k].slice(0,3)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </button>
+            </div>
 
+            {/* Prayer strip indicators */}
+            <div className="flex gap-2 mt-5">
+              {PRAYER_KEYS.map(k => {
+                const log = prayerLogs.find(l => l.prayer_name === k);
+                const isKazaa = log?.status === 'kazaa';
+                const isOnTime = log && !isKazaa;
+                return (
+                  <div key={k} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="w-full rounded-full" style={{ height: 4, background: isOnTime ? '#10b981' : isKazaa ? '#f59e0b' : '#1a2e22' }} />
+                    <span style={{ fontSize: 9, color: isOnTime ? '#6ee7b7' : isKazaa ? '#fbbf24' : '#374151' }}>
+                      {PRAYER_LABELS[k].slice(0, 3)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Dashboard cards */}
+          <div className="px-4 pt-3 space-y-3">
             {/* Bills card */}
             <button
               onClick={() => switchTab('bills')}
               className="w-full rounded-2xl p-4 text-left active:opacity-80 transition-opacity"
               style={{ background: '#1c1c1e' }}
             >
-              <p className="text-xs font-medium mb-2" style={{ color: '#8e8e93' }}>BILLS THIS MONTH</p>
-              <div className="flex justify-between items-end mb-3">
+              <p className="text-xs font-semibold mb-3" style={{ color: '#8e8e93', letterSpacing: 1 }}>BILLS THIS MONTH</p>
+              <div className="flex items-end justify-between mb-3">
                 <div>
                   <p className="text-3xl font-bold">{fmtGBP(totalBills)}</p>
                   <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>total going out</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-xl font-semibold" style={{ color: '#10b981' }}>{fmtGBP(paidAmt)}</p>
-                  <p className="text-xs" style={{ color: '#6b7280' }}>paid · {paidIds.size}/{bills.length} bills</p>
+                <div className="text-right space-y-0.5">
+                  <p className="text-lg font-bold" style={{ color: '#10b981' }}>{fmtGBP(paidAmt)} <span className="text-xs font-normal" style={{ color: '#6b7280' }}>paid</span></p>
+                  <p className="text-lg font-bold" style={{ color: remaining > 0 ? '#f59e0b' : '#4b5563' }}>{fmtGBP(remaining)} <span className="text-xs font-normal" style={{ color: '#6b7280' }}>left</span></p>
                 </div>
               </div>
-              <div className="h-1.5 rounded-full" style={{ background: '#2c2c2e' }}>
-                <div className="h-1.5 rounded-full" style={{ background: '#10b981', width: totalBills > 0 ? `${Math.min((paidAmt / totalBills) * 100, 100)}%` : '0%' }} />
+              <div className="h-2 rounded-full mb-2" style={{ background: '#2c2c2e' }}>
+                <div className="h-2 rounded-full transition-all duration-500"
+                  style={{ background: '#10b981', width: totalBills > 0 ? `${Math.min((paidAmt / totalBills) * 100, 100)}%` : '0%' }} />
               </div>
-              {dueSoon.length > 0 && (
-                <p className="text-xs mt-2" style={{ color: '#f59e0b' }}>⚠️ {dueSoon.length} bill{dueSoon.length > 1 ? 's' : ''} due in the next 7 days</p>
-              )}
+              <div className="flex items-center justify-between">
+                <p className="text-xs" style={{ color: '#4b5563' }}>{paidIds.size}/{bills.length} bills paid</p>
+                {dueSoon.length > 0 && (
+                  <p className="text-xs" style={{ color: '#f59e0b' }}>⚠️ {dueSoon.length} due soon</p>
+                )}
+              </div>
             </button>
 
-            {/* Stats row */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => switchTab('tasks')}
-                className="rounded-2xl p-4 text-left active:opacity-80"
-                style={{ background: '#1c1c1e' }}
-              >
-                <p className="text-2xl mb-1">✅</p>
+            {/* Stat cards row */}
+            <div className="grid grid-cols-3 gap-2.5">
+              <button onClick={() => switchTab('tasks')} className="rounded-2xl p-4 text-left active:opacity-80" style={{ background: '#1c1c1e' }}>
+                <p className="text-2xl mb-2">✅</p>
                 <p className="text-2xl font-bold">{tasks.length}</p>
-                <p className="text-xs mt-0.5" style={{ color: '#8e8e93' }}>tasks pending</p>
+                <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>tasks</p>
+              </button>
+              <button onClick={() => switchTab('tasks')} className="rounded-2xl p-4 text-left active:opacity-80" style={{ background: '#1c1c1e' }}>
+                <p className="text-2xl mb-2">🛒</p>
+                <p className="text-2xl font-bold">{shopping.length}</p>
+                <p className="text-xs mt-0.5" style={{ color: '#6b7280' }}>shopping</p>
               </button>
               <button
-                onClick={() => switchTab('tasks')}
-                className="rounded-2xl p-4 text-left active:opacity-80"
-                style={{ background: '#1c1c1e' }}
+                onClick={() => switchTab('prayers')}
+                className="rounded-2xl p-4 text-left active:opacity-80 transition-all"
+                style={{ background: wentGymThisWeek ? '#052e16' : '#1c1c1e', border: `1px solid ${wentGymThisWeek ? '#059669' : 'transparent'}` }}
               >
-                <p className="text-2xl mb-1">🛒</p>
-                <p className="text-2xl font-bold">{shopping.length}</p>
-                <p className="text-xs mt-0.5" style={{ color: '#8e8e93' }}>items needed</p>
+                <p className="text-2xl mb-2">💪</p>
+                <p className="text-2xl font-bold" style={{ color: wentGymThisWeek ? '#10b981' : '#fff' }}>
+                  {wentGymThisWeek ? '\u2713' : '\u2014'}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: wentGymThisWeek ? '#6ee7b7' : '#6b7280' }}>
+                  {wentGymThisWeek ? 'done!' : 'gym'}
+                </p>
               </button>
             </div>
 
@@ -487,25 +547,32 @@
                 className="w-full rounded-2xl p-4 text-left active:opacity-80"
                 style={{ background: '#1c1c1e' }}
               >
-                <p className="text-xs font-medium mb-2" style={{ color: '#8e8e93' }}>YOUR TASKS</p>
-                <div className="space-y-2">
-                  {myTasks.map(t => (
-                    <div key={t.id} className="flex items-center gap-2">
-                      <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: '#10b981' }} />
-                      <p className="text-sm truncate">{t.title}</p>
-                      {t.due_date && t.due_date < todayStr() && (
-                        <span className="text-xs ml-auto flex-shrink-0" style={{ color: '#ef4444' }}>overdue</span>
-                      )}
-                    </div>
-                  ))}
+                <p className="text-xs font-semibold mb-3" style={{ color: '#8e8e93', letterSpacing: 1 }}>YOUR TASKS</p>
+                <div className="space-y-2.5">
+                  {myTasks.map(t => {
+                    const isOverdue = t.due_date && t.due_date < todayStr();
+                    return (
+                      <div key={t.id} className="flex items-center gap-2.5">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: isOverdue ? '#ef4444' : '#10b981' }} />
+                        <p className="text-sm flex-1 truncate">{t.title}</p>
+                        {t.due_date && (
+                          <span className="text-xs flex-shrink-0" style={{ color: isOverdue ? '#ef4444' : '#4b5563' }}>
+                            {isOverdue ? 'overdue' : new Date(t.due_date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
+                {tasks.length > 3 && (
+                  <p className="text-xs mt-3" style={{ color: '#4b5563' }}>+{tasks.length - 3} more →</p>
+                )}
               </button>
             )}
           </div>
         </div>
       );
     }
-
     // ─── Prayers Tab ──────────────────────────────────────────────────
     function PrayersTab({ user, allUsers, noPadTop }) {
       const [date, setDate] = useState(todayStr());
