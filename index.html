@@ -758,51 +758,51 @@
               </button>
             )}
           </div>
-        </div>
 
-        {/* Google Fit setup modal */}
-        {showGFitSetup && (
-          <div className="fixed inset-0 z-50 flex items-end" style={{ background: 'rgba(0,0,0,0.8)' }}
-            onClick={() => setShowGFitSetup(false)}>
-            <div className="w-full rounded-t-3xl p-6 pb-10" style={{ background: '#1c1c1e' }}
-              onClick={e => e.stopPropagation()}>
-              <div className="w-10 h-1 rounded-full mx-auto mb-5" style={{ background: '#3a3a3c' }} />
-              <h3 className="text-xl font-bold mb-1">Google Fit Setup</h3>
-              <p className="text-sm mb-5" style={{ color: '#8e8e93' }}>Steps are pulled from Google Fit via OAuth. One-time setup:</p>
-              <ol className="text-sm space-y-2 mb-5" style={{ color: '#d1d5db' }}>
-                <li><span style={{ color: '#60a5fa' }}>1.</span> Go to <strong>console.cloud.google.com</strong></li>
-                <li><span style={{ color: '#60a5fa' }}>2.</span> New project &rarr; APIs &amp; Services &rarr; Enable <strong>Fitness API</strong></li>
-                <li><span style={{ color: '#60a5fa' }}>3.</span> Credentials &rarr; Create OAuth 2.0 Client ID &rarr; Web application</li>
-                <li><span style={{ color: '#60a5fa' }}>4.</span> Add your Netlify URL as an <strong>Authorised JavaScript origin</strong></li>
-                <li><span style={{ color: '#60a5fa' }}>5.</span> Paste the Client ID below</li>
-              </ol>
-              <input
-                className="w-full rounded-xl px-4 py-3 mb-3 text-sm"
-                style={{ background: '#2c2c2e', color: '#fff', border: '1px solid #3a3a3c' }}
-                placeholder="Paste OAuth 2.0 Client ID (ends in .apps.googleusercontent.com)..."
-                defaultValue={localStorage.getItem('gfit_client_id') || ''}
-                onChange={e => localStorage.setItem('gfit_client_id', e.target.value.trim())}
-              />
-              <div className="flex gap-3 mb-3">
-                <button
-                  onClick={() => {
-                    const t = parseInt(prompt('Daily step target (current: ' + stepTarget + '):', stepTarget));
-                    if (t > 0) { setStepTarget(t); localStorage.setItem('step_target', String(t)); }
-                  }}
-                  className="flex-1 py-3 rounded-2xl text-sm font-semibold"
-                  style={{ background: '#2c2c2e', color: '#d1d5db' }}>
-                  Target: {stepTarget.toLocaleString()} steps
-                </button>
-                <button
-                  onClick={() => setShowGFitSetup(false)}
-                  className="flex-1 py-3 rounded-2xl text-sm font-semibold"
-                  style={{ background: '#052e16', color: '#10b981' }}>
-                  Done
-                </button>
+          {/* Google Fit setup modal */}
+          {showGFitSetup && (
+            <div className="fixed inset-0 z-50 flex items-end" style={{ background: 'rgba(0,0,0,0.8)' }}
+              onClick={() => setShowGFitSetup(false)}>
+              <div className="w-full rounded-t-3xl p-6 pb-10" style={{ background: '#1c1c1e' }}
+                onClick={e => e.stopPropagation()}>
+                <div className="w-10 h-1 rounded-full mx-auto mb-5" style={{ background: '#3a3a3c' }} />
+                <h3 className="text-xl font-bold mb-1">Google Fit Setup</h3>
+                <p className="text-sm mb-5" style={{ color: '#8e8e93' }}>Steps are pulled from Google Fit via OAuth. One-time setup:</p>
+                <ol className="text-sm space-y-2 mb-5" style={{ color: '#d1d5db' }}>
+                  <li><span style={{ color: '#60a5fa' }}>1.</span> Go to <strong>console.cloud.google.com</strong></li>
+                  <li><span style={{ color: '#60a5fa' }}>2.</span> New project &rarr; APIs &amp; Services &rarr; Enable <strong>Fitness API</strong></li>
+                  <li><span style={{ color: '#60a5fa' }}>3.</span> Credentials &rarr; Create OAuth 2.0 Client ID &rarr; Web application</li>
+                  <li><span style={{ color: '#60a5fa' }}>4.</span> Add your Netlify URL as an <strong>Authorised JavaScript origin</strong></li>
+                  <li><span style={{ color: '#60a5fa' }}>5.</span> Paste the Client ID below</li>
+                </ol>
+                <input
+                  className="w-full rounded-xl px-4 py-3 mb-3 text-sm"
+                  style={{ background: '#2c2c2e', color: '#fff', border: '1px solid #3a3a3c' }}
+                  placeholder="Paste OAuth 2.0 Client ID (ends in .apps.googleusercontent.com)..."
+                  defaultValue={localStorage.getItem('gfit_client_id') || ''}
+                  onChange={e => localStorage.setItem('gfit_client_id', e.target.value.trim())}
+                />
+                <div className="flex gap-3 mb-3">
+                  <button
+                    onClick={() => {
+                      const t = parseInt(prompt('Daily step target (current: ' + stepTarget + '):', stepTarget));
+                      if (t > 0) { setStepTarget(t); localStorage.setItem('step_target', String(t)); }
+                    }}
+                    className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+                    style={{ background: '#2c2c2e', color: '#d1d5db' }}>
+                    Target: {stepTarget.toLocaleString()} steps
+                  </button>
+                  <button
+                    onClick={() => setShowGFitSetup(false)}
+                    className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+                    style={{ background: '#052e16', color: '#10b981' }}>
+                    Done
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       );
     }
     // ─── Prayers Tab ──────────────────────────────────────────────────
@@ -1988,7 +1988,14 @@
                             <span className="text-xs text-white font-bold">✓</span>
                           </div>
                         </button>
-                        <p className="flex-1 text-sm line-through" style={{ color: '#6b7280' }}>{item.name}</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm line-through" style={{ color: '#6b7280' }}>{item.name}</p>
+                          {item.checked_at && (
+                            <p className="text-xs mt-0.5" style={{ color: '#4b5563' }}>
+                              {new Date(item.checked_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} · {new Date(item.checked_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                            </p>
+                          )}
+                        </div>
                         <button onClick={() => deleteItem(item.id)} className="text-xs px-1" style={{ color: '#4b5563' }}>✕</button>
                       </div>
                     ))}
@@ -2338,7 +2345,53 @@
       const [showAdd, setShowAdd] = useState(false);
       const [form, setForm] = useState({ date: todayStr(), store: '', amount: '', notes: '' });
       const [receipt, setReceipt] = useState(null); // base64
+      const [scanning, setScanning] = useState(false);
+      const [scannedItems, setScannedItems] = useState([]);
       const imgRef = useRef(null);
+
+      const scanWithAI = async () => {
+        if (!receipt) return;
+        let apiKey = localStorage.getItem('anthropic_key') || '';
+        if (!apiKey) {
+          apiKey = prompt('Enter your Anthropic API key (from console.anthropic.com/settings/api-keys):');
+          if (!apiKey) return;
+          localStorage.setItem('anthropic_key', apiKey.trim());
+          apiKey = apiKey.trim();
+        }
+        setScanning(true);
+        try {
+          const base64 = receipt.split(',')[1];
+          const mediaType = receipt.split(';')[0].split(':')[1] || 'image/jpeg';
+          const resp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01',
+              'content-type': 'application/json',
+              'anthropic-dangerous-direct-browser-access': 'true',
+            },
+            body: JSON.stringify({
+              model: 'claude-opus-4-7',
+              max_tokens: 1024,
+              messages: [{ role: 'user', content: [
+                { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
+                { type: 'text', text: 'This is a shopping receipt. Extract: 1) store name, 2) total amount paid (number only, no currency symbol), 3) list of items purchased with prices. Return ONLY valid JSON, no extra text: {"store":"...","total":0.00,"items":[{"name":"...","price":0.00}]}. Use null for unknown values.' }
+              ]}]
+            })
+          });
+          const data = await resp.json();
+          if (data.error) throw new Error(data.error.message);
+          const text = data.content[0].text;
+          const match = text.match(/\{[\s\S]*\}/);
+          if (match) {
+            const parsed = JSON.parse(match[0]);
+            if (parsed.store) setForm(f => ({ ...f, store: parsed.store }));
+            if (parsed.total) setForm(f => ({ ...f, amount: String(parsed.total) }));
+            if (Array.isArray(parsed.items)) setScannedItems(parsed.items.filter(i => i.name));
+          }
+        } catch(e) { alert('AI scan failed: ' + e.message); }
+        setScanning(false);
+      };
 
       const fetchTrips = () => {
         db.from('family_shopping_trips').select('*').eq('user_id', user.id).order('date', { ascending: false }).limit(50)
@@ -2378,9 +2431,11 @@
           amount: parseFloat(form.amount),
           notes: form.notes || null,
           receipt_img: receipt || null,
+          items: scannedItems.length > 0 ? scannedItems : null,
         });
         setForm({ date: todayStr(), store: '', amount: '', notes: '' });
         setReceipt(null);
+        setScannedItems([]);
         setShowAdd(false);
         fetchTrips();
       };
@@ -2460,6 +2515,20 @@
                       </div>
                     </div>
                     {trip.notes && <p className="text-xs mt-1" style={{ color: '#6b7280' }}>{trip.notes}</p>}
+                    {trip.items && trip.items.length > 0 && (
+                      <div className="mt-2 pt-2" style={{ borderTop: '1px solid #2c2c2e' }}>
+                        <p className="text-xs font-semibold mb-1.5" style={{ color: '#6b7280', letterSpacing: 0.5 }}>ITEMS</p>
+                        <div className="space-y-0.5">
+                          {trip.items.slice(0, 6).map((item, i) => (
+                            <div key={i} className="flex justify-between text-xs" style={{ color: '#9ca3af' }}>
+                              <span>{item.name}</span>
+                              {item.price != null && <span style={{ color: '#6b7280' }}>{fmtGBP(item.price)}</span>}
+                            </div>
+                          ))}
+                          {trip.items.length > 6 && <p className="text-xs mt-0.5" style={{ color: '#4b5563' }}>+{trip.items.length - 6} more items</p>}
+                        </div>
+                      </div>
+                    )}
                     {trip.receipt_img && (
                       <img src={trip.receipt_img} alt="Receipt" className="mt-2 rounded-xl w-full object-cover" style={{ maxHeight: 200 }} />
                     )}
@@ -2491,7 +2560,29 @@
                     style={{ background: '#2c2c2e', color: receipt ? '#10b981' : '#9ca3af', border: '1px solid #3a3a3c' }}>
                     {receipt ? '✓ Photo added — tap to replace' : '📷 Take photo / choose from gallery'}
                   </button>
-                  {receipt && <img src={receipt} alt="preview" className="mt-2 rounded-xl w-full object-cover" style={{ maxHeight: 160 }} />}
+                  {receipt && (
+                    <>
+                      <img src={receipt} alt="preview" className="mt-2 rounded-xl w-full object-cover" style={{ maxHeight: 160 }} />
+                      <button onClick={scanWithAI} disabled={scanning}
+                        className="mt-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-98"
+                        style={{ background: scanning ? '#111' : '#1e1b4b', color: scanning ? '#4b5563' : '#a5b4fc', border: '1px solid #312e81' }}>
+                        {scanning ? '🤖 Scanning receipt...' : '🤖 Scan with AI — extract items & total'}
+                      </button>
+                    </>
+                  )}
+                  {scannedItems.length > 0 && (
+                    <div className="mt-2 rounded-xl p-3" style={{ background: '#0a1f0a', border: '1px solid #1e3a1e' }}>
+                      <p className="text-xs font-semibold mb-2" style={{ color: '#6ee7b7', letterSpacing: 1 }}>AI FOUND {scannedItems.length} ITEMS</p>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {scannedItems.map((item, i) => (
+                          <div key={i} className="flex justify-between text-xs" style={{ color: '#9ca3af' }}>
+                            <span>{item.name}</span>
+                            {item.price != null && <span>{fmtGBP(item.price)}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </Field>
                 <button onClick={saveTrip} className="w-full py-3.5 rounded-xl font-semibold transition-all active:scale-98" style={{ background: '#10b981', color: '#fff' }}>
                   Save Trip
